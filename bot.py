@@ -25,6 +25,8 @@ from game import GameClient
 LOG_FILE = 'bot_log.txt'
 STATE_FILE = 'bot_state.txt'
 CMD_FILE = 'cmd.txt'
+CHAT_LOG = 'chat_history.log'
+NPC_LOG = 'npc_history.log'
 
 log = logging.getLogger('bot')
 
@@ -36,6 +38,20 @@ def write_log(msg: str):
     print(line)
     with open(LOG_FILE, 'a') as f:
         f.write(line + '\n')
+
+
+def write_chat_log(msg: str):
+    """Append to persistent chat history (survives restarts)."""
+    timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
+    with open(CHAT_LOG, 'a') as f:
+        f.write(f'[{timestamp}] {msg}\n')
+
+
+def write_npc_log(npc_name: str, msg: str):
+    """Append to persistent NPC interaction history."""
+    timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
+    with open(NPC_LOG, 'a') as f:
+        f.write(f'[{timestamp}] [{npc_name}] {msg}\n')
 
 
 def write_state(client: GameClient):
@@ -330,12 +346,18 @@ def main():
                 data = event[1]
                 if etype == 'chat':
                     write_log(f'[Chat] {data.message}')
+                    write_chat_log(data.message)
                 elif etype == 'whisper':
                     write_log(f'[Whisper from {data.sender}] {data.message}')
+                    write_chat_log(f'[whisper from {data.sender}] {data.message}')
                 elif etype == 'gm_chat':
                     write_log(f'[GM] {data.message}')
+                    write_chat_log(f'[GM] {data.message}')
                 elif etype == 'npc_message':
                     write_log(f'[NPC] {data.message}')
+                    npc_name = client.beings.get(data.npc_id, None)
+                    npc_name = npc_name.name if npc_name else f'NPC#{data.npc_id}'
+                    write_npc_log(npc_name, data.message)
                 elif etype == 'npc_next':
                     write_log('[NPC waits - send "next"]')
                 elif etype == 'npc_close':
