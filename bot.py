@@ -81,11 +81,13 @@ def write_state(client: GameClient):
     lines.append('inventory:')
     for idx in sorted(client.inventory.keys()):
         item = client.inventory[idx]
-        lines.append(f'  [{idx}] item#{item.name_id} x{item.amount} type={item.item_type}')
+        from items import item_name
+        lines.append(f'  [{idx}] {item_name(item.name_id)} x{item.amount}')
     lines.append('')
     lines.append('floor_items:')
     for item in client.nearby_items(radius=15):
-        lines.append(f'  [{item.block_id}] item#{item.name_id} x{item.amount} at ({item.x},{item.y})')
+        from items import item_name
+        lines.append(f'  [{item.block_id}] {item_name(item.name_id)} x{item.amount} at ({item.x},{item.y})')
     lines.append('')
     lines.append('npc_dialog:')
     if client.npc_dialog:
