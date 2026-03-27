@@ -303,6 +303,12 @@ def execute_command(client: GameClient, cmd: str):
         client.disconnect()
         os.execv(sys.executable, [sys.executable] + sys.argv)
 
+    elif action == 'board':
+        # Keep trying to board a ferry/portal until it works
+        npc_id = int(args) if args else 0
+        client._board_target = npc_id
+        write_log(f'Trying to board #{npc_id} (will retry until map changes)')
+
     elif action == 'watch':
         # Watch a specific being's movement for debugging
         if args:
@@ -385,6 +391,9 @@ def main():
                     write_log(f'[NPC choices: {", ".join(f"{i+1}={c}" for i, c in enumerate(data.choices))}]')
                 elif etype == 'map_change':
                     write_log(f'[Warped to {data.map_name} ({data.x},{data.y})]')
+                    if getattr(client, '_board_target', 0):
+                        client._board_target = 0
+                        write_log('[Boarded! Stopped retry.]')
                 elif etype == 'action' and data.damage > 0:
                     if data.dst_id == client.account_id:
                         write_log(f'[Hit] took {data.damage} damage')
@@ -447,6 +456,13 @@ def main():
                         client.walk_to(item.x, item.y)
                         client.pickup(item.block_id)
                         break
+
+            # Board: keep trying to click a dock NPC until we warp
+            board_target = getattr(client, '_board_target', 0)
+            if board_target and tick_count % 15 == 0:
+                from packets import build_npc_close, build_npc_click
+                client.map_conn.send_packet(build_npc_close(board_target))
+                client.map_conn.send_packet(build_npc_click(board_target))
 
             # Follow: stay within 3 tiles of target player
             follow_target = getattr(client, '_follow_target', 0)
