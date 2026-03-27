@@ -268,6 +268,15 @@ def execute_command(client: GameClient, cmd: str):
         client.disconnect()
         os.execv(sys.executable, [sys.executable] + sys.argv)
 
+    elif action == 'watch':
+        # Watch a specific being's movement for debugging
+        if args:
+            client._watch_id = int(args)
+            write_log(f'Watching being #{args} for movement')
+        else:
+            client._watch_id = 0
+            write_log('Stopped watching')
+
     else:
         write_log(f'Unknown command: {cmd}')
 
@@ -342,6 +351,18 @@ def main():
                     write_log(f'[Died] #{data.block_id}')
                 elif etype == 'name':
                     pass  # Silently stored
+
+                # Watch mode: log movement of a specific being
+                watch_id = getattr(client, '_watch_id', 0)
+                if watch_id and hasattr(data, 'block_id') and data.block_id == watch_id:
+                    if etype == 'being_visible':
+                        write_log(f'[WATCH] VISIBLE at ({data.x},{data.y})')
+                    elif etype == 'being_move':
+                        write_log(f'[WATCH] MOVE ({data.x0},{data.y0})->({data.x1},{data.y1})')
+                    elif etype == 'stop':
+                        write_log(f'[WATCH] STOP at ({data.x},{data.y})')
+                    elif etype == 'being_remove':
+                        write_log(f'[WATCH] REMOVE reason={data.reason}')
 
             # Auto-attack: chase target into melee range and keep attacking
             auto_target = getattr(client, '_auto_attack_target', 0)

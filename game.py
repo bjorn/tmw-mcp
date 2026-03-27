@@ -491,8 +491,13 @@ class GameClient:
             return ('being_remove', pkt)
 
         elif isinstance(pkt, WalkResponse):
+            old_x, old_y = self.player.x, self.player.y
             self.player.x = pkt.x1
             self.player.y = pkt.y1
+            # Log if the walk source doesn't match our tracked position
+            if abs(pkt.x0 - old_x) > 1 or abs(pkt.y0 - old_y) > 1:
+                log.warning('Walk source mismatch! Server says from (%d,%d) but we thought (%d,%d) -> dest (%d,%d)',
+                            pkt.x0, pkt.y0, old_x, old_y, pkt.x1, pkt.y1)
             return ('walk', pkt)
 
         elif isinstance(pkt, PlayerStop):
