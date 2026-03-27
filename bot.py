@@ -310,6 +310,13 @@ def execute_command(client: GameClient, cmd: str):
         client.disconnect()
         os.execv(sys.executable, [sys.executable] + sys.argv)
 
+    elif action == 'emote':
+        # Send emote: 0x00bf with emote type u8
+        import struct as st
+        emote_id = int(args) if args else 0
+        client.map_conn.send_packet(st.pack('<HB', 0x00bf, emote_id))
+        write_log(f'Emote {emote_id}')
+
     elif action == 'use':
         # Use an item by inventory index
         import struct
