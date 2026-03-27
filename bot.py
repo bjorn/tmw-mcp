@@ -135,8 +135,13 @@ def execute_command(client: GameClient, cmd: str):
 
     elif action == 'attack':
         target_id = int(args)
-        client.attack(target_id)
-        write_log(f'Attacking #{target_id}')
+        client.attack(target_id, continuous=True)
+        client._auto_attack_target = target_id
+        write_log(f'Attacking #{target_id} (continuous)')
+
+    elif action == 'stopattack':
+        client._auto_attack_target = 0
+        write_log('Stopped auto-attack')
 
     elif action == 'pickup':
         item_id = int(args)
@@ -263,6 +268,15 @@ def main():
                     write_log(f'[Died] #{data.block_id}')
                 elif etype == 'name':
                     pass  # Silently stored
+
+            # Re-send auto-attack if target still alive
+            auto_target = getattr(client, '_auto_attack_target', 0)
+            if auto_target and tick_count % 10 == 0:
+                if auto_target in client.beings:
+                    client.attack(auto_target, continuous=True)
+                else:
+                    client._auto_attack_target = 0
+                    write_log(f'[Auto-attack target #{auto_target} gone]')
 
             # Send keepalive
             client.send_ping()

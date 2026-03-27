@@ -658,9 +658,12 @@ class GameClient:
     # ------------------------------------------------------------------
 
     def say(self, message: str):
-        """Send a chat message."""
-        full = f'{self.player.char_name} : {message}'
-        self.map_conn.send_packet(build_chat(full))
+        """Send a chat message.
+
+        Modern tmwAthena servers (>= 0x100408) expect just the message
+        without the player name prefix.
+        """
+        self.map_conn.send_packet(build_chat(message))
 
     def whisper(self, target: str, message: str):
         """Send a private message."""
