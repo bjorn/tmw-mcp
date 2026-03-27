@@ -530,6 +530,19 @@ class InventoryRemove:
     amount: int = 0
 
 @dataclass
+class InventoryItem:
+    """Single inventory item."""
+    index: int = 0
+    name_id: int = 0
+    item_type: int = 0
+    amount: int = 0
+
+@dataclass
+class InventoryList:
+    """0x01ee"""
+    items: list = field(default_factory=list)
+
+@dataclass
 class StatUpdate1:
     """0x00b0"""
     sp_type: int = 0
@@ -992,6 +1005,24 @@ def parse_packet(packet_id: int, data: bytes):
             tick=struct.unpack_from('<I', data, 12)[0],
             damage=struct.unpack_from('<I', data, 24)[0],
         )
+
+    elif packet_id == 0x01ee:
+        # Inventory list: head=4, repeat_size=18
+        # repeat: ioff2(u16) + name_id(u16) + item_type(u8) + identify(u8)
+        #         + amount(u16) + epos(u16) + card0-3(u16x4)
+        length = struct.unpack_from('<H', data, 2)[0]
+        result = InventoryList()
+        n_items = (length - 4) // 18
+        for i in range(n_items):
+            off = 4 + i * 18
+            item = InventoryItem(
+                index=struct.unpack_from('<H', data, off)[0],
+                name_id=struct.unpack_from('<H', data, off + 2)[0],
+                item_type=data[off + 4],
+                amount=struct.unpack_from('<H', data, off + 6)[0],
+            )
+            result.items.append(item)
+        return result
 
     elif packet_id == 0x0229:
         length = struct.unpack_from('<H', data, 2)[0]

@@ -65,6 +65,8 @@ from packets import (
     ItemDropped,
     InventoryAdd,
     InventoryRemove,
+    InventoryList,
+    InventoryItem,
     StatUpdate1,
     StatUpdate5,
     NpcMessage,
@@ -223,6 +225,7 @@ class GameClient:
         self.player = PlayerState()
         self.beings: dict[int, Being] = {}
         self.floor_items: dict[int, FloorItem] = {}
+        self.inventory: dict[int, InventoryItem] = {}  # index -> item
         self.update_host: str = ''
         self.characters: list[CharInfo] = []
 
@@ -587,10 +590,24 @@ class GameClient:
                 amount=pkt.amount, x=pkt.x, y=pkt.y)
             return ('item_dropped', pkt)
 
+        elif isinstance(pkt, InventoryList):
+            for item in pkt.items:
+                self.inventory[item.index] = item
+            log.info('Inventory: %d items', len(pkt.items))
+            return ('inventory_list', pkt)
+
         elif isinstance(pkt, InventoryAdd):
+            if pkt.pickup_fail == 0:
+                self.inventory[pkt.index] = InventoryItem(
+                    index=pkt.index, name_id=pkt.name_id,
+                    item_type=pkt.item_type, amount=pkt.amount)
             return ('inventory_add', pkt)
 
         elif isinstance(pkt, InventoryRemove):
+            if pkt.index in self.inventory:
+                self.inventory[pkt.index].amount -= pkt.amount
+                if self.inventory[pkt.index].amount <= 0:
+                    del self.inventory[pkt.index]
             return ('inventory_remove', pkt)
 
         elif isinstance(pkt, NpcMessage):

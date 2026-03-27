@@ -78,6 +78,11 @@ def write_state(client: GameClient):
         hp_str = f' HP:{b.hp}/{b.max_hp}' if b.max_hp > 0 else ''
         lines.append(f'  [{b.block_id}] {name} at ({b.x},{b.y}){hp_str}')
     lines.append('')
+    lines.append('inventory:')
+    for idx in sorted(client.inventory.keys()):
+        item = client.inventory[idx]
+        lines.append(f'  [{idx}] item#{item.name_id} x{item.amount} type={item.item_type}')
+    lines.append('')
     lines.append('floor_items:')
     for item in client.nearby_items(radius=15):
         lines.append(f'  [{item.block_id}] item#{item.name_id} x{item.amount} at ({item.x},{item.y})')
