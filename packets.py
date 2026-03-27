@@ -234,6 +234,11 @@ def build_item_pickup(object_id: int) -> bytes:
     return struct.pack('<HI', 0x009f, object_id)
 
 
+def build_equip_item(index: int, epos: int = 0) -> bytes:
+    """0x00a9: Equip an item from inventory. index is ioff2 (inventory offset)."""
+    return struct.pack('<HHH', 0x00a9, index, epos)
+
+
 def build_drop_item(index: int, amount: int) -> bytes:
     """0x00a2: Drop an item."""
     return struct.pack('<HHH', 0x00a2, index, amount)

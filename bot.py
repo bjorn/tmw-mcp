@@ -143,6 +143,12 @@ def execute_command(client: GameClient, cmd: str):
         client.pickup(item_id)
         write_log(f'Picking up #{item_id}')
 
+    elif action == 'equip':
+        from packets import build_equip_item
+        index = int(args)
+        client.map_conn.send_packet(build_equip_item(index))
+        write_log(f'Equipping item at index {index}')
+
     elif action == 'npc':
         npc_id = int(args)
         client.click_npc(npc_id)
