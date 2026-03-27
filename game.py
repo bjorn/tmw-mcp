@@ -403,9 +403,18 @@ class GameClient:
             log.warning('No characters on this account')
             return False
 
-        # Find character in requested slot
+        # Find character in requested slot and load initial stats
         for c in self.characters:
             self.player.char_name = c.char_name
+            self.player.base_level = c.base_level
+            self.player.job_level = c.job_level
+            self.player.base_exp = c.base_exp
+            self.player.job_exp = c.job_exp
+            self.player.zeny = c.zeny
+            self.player.hp = c.hp
+            self.player.max_hp = c.max_hp
+            self.player.sp = c.sp
+            self.player.max_sp = c.max_sp
             if c.char_num == char_slot:
                 break
 
