@@ -1,0 +1,671 @@
+#!/usr/bin/env python3
+"""
+TMW Bot MCP Server - exposes game commands as MCP tools and pushes
+game events as channel notifications to wake Claude from idle.
+
+Usage (via .mcp.json):
+    { "mcpServers": { "tmw-bot": { "command": "python3", "args": ["client/mcp_server.py"] } } }
+
+Then: claude --channels server:tmw-bot --dangerously-load-development-channels
+"""
+
+import asyncio
+import json
+import logging
+import os
+import queue
+import sys
+import threading
+import time
+from concurrent.futures import Future
+from contextlib import asynccontextmanager
+
+# Ensure all logging goes to stderr (stdout is reserved for MCP JSON-RPC)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s %(name)s: %(message)s',
+    datefmt='%H:%M:%S',
+    stream=sys.stderr,
+)
+logging.getLogger('net').setLevel(logging.WARNING)
+
+# Add client dir to path
+CLIENT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, CLIENT_DIR)
+os.chdir(CLIENT_DIR)
+
+from mcp.server.fastmcp import FastMCP, Context
+from mcp.types import JSONRPCNotification, JSONRPCMessage
+from mcp.shared.message import SessionMessage
+
+from game import GameClient
+from bot import (
+    write_log, write_chat_log, write_npc_log, write_state,
+    format_event, is_wakeup_event, run_auto_behaviors,
+    execute_command, is_safe_message,
+    LOG_FILE,
+)
+from items import item_name
+from maps import load_collision
+
+log = logging.getLogger('mcp_server')
+
+
+# ---------------------------------------------------------------------------
+# Shared state between MCP async context and game thread
+# ---------------------------------------------------------------------------
+
+class SharedState:
+    def __init__(self):
+        self.client: GameClient | None = None
+        self.game_thread: threading.Thread | None = None
+        self.running: bool = False
+        self.command_queue: queue.Queue = queue.Queue()
+        self.event_loop: asyncio.AbstractEventLoop | None = None
+        self.notification_queue: asyncio.Queue | None = None
+        self.session_ref = None  # ServerSession, captured on first tool call
+
+state = SharedState()
+
+
+# ---------------------------------------------------------------------------
+# Channel notification bridge (game thread -> async MCP)
+# ---------------------------------------------------------------------------
+
+def push_notification(content: str):
+    """Push a channel notification from the game thread."""
+    if state.event_loop and state.notification_queue:
+        state.event_loop.call_soon_threadsafe(
+            state.notification_queue.put_nowait, content
+        )
+
+
+async def notification_forwarder():
+    """Async task: drain notification queue and send MCP channel messages."""
+    while True:
+        content = await state.notification_queue.get()
+        session = state.session_ref
+        if session is None:
+            continue  # No session yet; drop (or we could buffer, but startup events aren't critical)
+        try:
+            notif = JSONRPCNotification(
+                method='notifications/claude/channel',
+                params={'content': content},
+                jsonrpc='2.0',
+            )
+            msg = SessionMessage(
+                message=JSONRPCMessage.model_validate(notif.model_dump())
+            )
+            await session.send_message(msg)
+        except Exception as e:
+            log.warning('Failed to send channel notification: %s', e)
+
+
+# ---------------------------------------------------------------------------
+# Command queue (MCP tools -> game thread)
+# ---------------------------------------------------------------------------
+
+def send_command(cmd_name: str, **kwargs) -> str:
+    """Send a command to the game thread and wait for the result."""
+    future = Future()
+    state.command_queue.put((future, cmd_name, kwargs))
+    try:
+        return future.result(timeout=5.0)
+    except Exception as e:
+        return f'Error: {e}'
+
+
+def drain_command_queue(client: GameClient):
+    """Process all pending MCP tool commands on the game thread."""
+    while not state.command_queue.empty():
+        try:
+            future, cmd_name, kwargs = state.command_queue.get_nowait()
+        except queue.Empty:
+            break
+        try:
+            result = _execute_tool_command(client, cmd_name, kwargs)
+            future.set_result(result)
+        except Exception as e:
+            future.set_exception(e)
+
+
+def _execute_tool_command(client: GameClient, cmd: str, kw: dict) -> str:
+    """Execute a single tool command on the game thread. Returns result string."""
+    if cmd == 'say':
+        msg = kw['message']
+        if not is_safe_message(msg):
+            return 'BLOCKED: message contained credentials!'
+        client.say(msg)
+        return f'Said: {msg}'
+
+    elif cmd == 'whisper':
+        if not is_safe_message(kw['message']):
+            return 'BLOCKED: message contained credentials!'
+        client.whisper(kw['target'], kw['message'])
+        return f'Whispered to {kw["target"]}: {kw["message"]}'
+
+    elif cmd == 'walk':
+        client.walk_to(kw['x'], kw['y'])
+        return f'Walking to ({kw["x"]},{kw["y"]})'
+
+    elif cmd == 'attack':
+        target_id = kw['target_id']
+        client.attack(target_id, continuous=True)
+        client._auto_attack_target = target_id
+        return f'Attacking #{target_id} (continuous)'
+
+    elif cmd == 'stopattack':
+        client._auto_attack_target = 0
+        client._hunt_type = ''
+        return 'Stopped auto-attack and hunting'
+
+    elif cmd == 'hunt':
+        name = kw.get('monster_name', '')
+        client._hunt_type = name
+        return f'Hunting: {name}' if name else 'Stopped hunting'
+
+    elif cmd == 'pickup':
+        client.pickup(kw['item_id'])
+        return f'Picking up #{kw["item_id"]}'
+
+    elif cmd == 'npc':
+        client.click_npc(kw['npc_id'])
+        return f'Talking to NPC #{kw["npc_id"]}'
+
+    elif cmd == 'next':
+        client.npc_next_response()
+        return 'NPC: next'
+
+    elif cmd == 'close':
+        from packets import build_npc_close
+        npc_id = kw.get('npc_id') or client.npc_id
+        client.map_conn.send_packet(build_npc_close(npc_id))
+        client.npc_waiting_close = False
+        client.npc_waiting_next = False
+        client.npc_waiting_choice = False
+        client.npc_dialog.clear()
+        return f'NPC: close #{npc_id}'
+
+    elif cmd == 'choose':
+        client.npc_choose(kw['choice'])
+        return f'NPC: chose {kw["choice"]}'
+
+    elif cmd == 'sit':
+        client.sit()
+        return 'Sitting down'
+
+    elif cmd == 'stand':
+        client.stand()
+        return 'Standing up'
+
+    elif cmd == 'follow':
+        target = kw.get('target', '')
+        if not target:
+            client._follow_target = 0
+            return 'Stopped following'
+        target_id = None
+        try:
+            target_id = int(target)
+        except ValueError:
+            for b in client.beings.values():
+                if b.name.lower() == target.lower():
+                    target_id = b.block_id
+                    break
+        if target_id:
+            client._follow_target = target_id
+            name = client.beings.get(target_id)
+            name = name.name if name else f'#{target_id}'
+            return f'Following {name}'
+        return f'Cannot find player: {target}'
+
+    elif cmd == 'equip':
+        from packets import build_equip_item
+        client.map_conn.send_packet(build_equip_item(kw['index']))
+        return f'Equipping item at index {kw["index"]}'
+
+    elif cmd == 'use':
+        import struct
+        pkt = struct.pack('<HHI', 0x00a7, kw['index'], 0)
+        client.map_conn.send_packet(pkt)
+        return f'Using item at index {kw["index"]}'
+
+    elif cmd == 'emote':
+        import struct
+        pkt = struct.pack('<HB', 0x00bf, kw['emote_id'])
+        client.map_conn.send_packet(pkt)
+        return f'Emote {kw["emote_id"]}'
+
+    elif cmd == 'stat':
+        from packets import build_stat_increase
+        stat_map = {
+            'str': 0x000d, 'agi': 0x000e, 'vit': 0x000f,
+            'int': 0x0010, 'dex': 0x0011, 'luk': 0x0012,
+        }
+        sn = kw['stat_name'].lower().strip()
+        if sn in stat_map:
+            client.map_conn.send_packet(build_stat_increase(stat_map[sn]))
+            return f'Increasing {sn.upper()}'
+        return f'Unknown stat: {sn}. Use: str, agi, vit, int, dex, luk'
+
+    elif cmd == 'face':
+        client.face(kw['direction'])
+        return f'Facing direction {kw["direction"]}'
+
+    elif cmd == 'respawn':
+        client.respawn()
+        return 'Respawning'
+
+    elif cmd == 'map':
+        cmap = load_collision(client.player.map_name)
+        if cmap:
+            view = cmap.render_around(
+                client.player.x, client.player.y, kw.get('radius', 10),
+                beings=client.beings, items=client.floor_items)
+            return f'Map around ({client.player.x},{client.player.y}):\n{view}'
+        return f'No collision data for {client.player.map_name}'
+
+    return f'Unknown command: {cmd}'
+
+
+# ---------------------------------------------------------------------------
+# Game loop (runs in background thread)
+# ---------------------------------------------------------------------------
+
+def game_loop():
+    """Synchronous game loop running in a dedicated thread."""
+    client = state.client
+    tick_count = 0
+
+    # Request names for visible beings
+    for b_id in list(client.beings.keys()):
+        client.request_name(b_id)
+
+    push_notification(
+        f'Game connected! {client.player.char_name} at '
+        f'{client.player.map_name} ({client.player.x},{client.player.y})'
+    )
+
+    while state.running:
+        try:
+            events = client.process_packets(timeout=0.2)
+        except Exception as e:
+            log.error('Game connection error: %s', e)
+            push_notification(f'[ERROR] Game connection lost: {e}')
+            state.running = False
+            break
+
+        for event in events:
+            etype, data = event[0], event[1]
+
+            # Log to file
+            msg = format_event(client, etype, data)
+            if msg:
+                write_log(msg)
+
+            # Persistent chat/NPC logs
+            if etype == 'chat':
+                write_chat_log(data.message)
+            elif etype == 'whisper':
+                write_chat_log(f'[whisper from {data.sender}] {data.message}')
+            elif etype == 'gm_chat':
+                write_chat_log(f'[GM] {data.message}')
+            elif etype == 'npc_message':
+                npc_name = client.beings.get(data.npc_id, None)
+                npc_name = npc_name.name if npc_name else f'NPC#{data.npc_id}'
+                write_npc_log(npc_name, data.message)
+            elif etype == 'map_change':
+                if getattr(client, '_board_target', 0):
+                    client._board_target = 0
+                    write_log('[Boarded! Stopped retry.]')
+
+            # Push channel notification for interesting events
+            if is_wakeup_event(client, etype, data):
+                notif_msg = msg
+                # Enrich combat notifications with HP info
+                if etype == 'action' and data.damage > 0:
+                    notif_msg = f'[Combat] Took {data.damage} damage (HP: {client.player.hp}/{client.player.max_hp})'
+                elif etype == 'being_remove' and data.reason == 1 and data.block_id == client.account_id:
+                    notif_msg = '[Death] You died!'
+                if notif_msg:
+                    push_notification(notif_msg)
+
+        # Automated behaviors
+        run_auto_behaviors(client, tick_count)
+
+        # Process MCP tool commands
+        drain_command_queue(client)
+
+        # Keepalive
+        client.send_ping()
+
+        # Write state file periodically (still useful for debugging)
+        tick_count += 1
+        if tick_count % 5 == 0:
+            write_state(client)
+
+        # Request names for unnamed beings
+        if tick_count % 25 == 0:
+            for b in client.nearby_beings():
+                if not b.name:
+                    client.request_name(b.block_id)
+
+    log.info('Game loop ended')
+
+
+# ---------------------------------------------------------------------------
+# State formatting (for tmw_state tool)
+# ---------------------------------------------------------------------------
+
+def format_game_state(client: GameClient) -> str:
+    """Format full game state as a string."""
+    p = client.player
+    lines = [
+        f'character: {p.char_name}',
+        f'map: {p.map_name}',
+        f'position: {p.x},{p.y}',
+        f'hp: {p.hp}/{p.max_hp}',
+        f'sp: {p.sp}/{p.max_sp}',
+        f'level: {p.base_level}/{p.job_level}',
+        f'exp: {p.base_exp}/{p.next_base_exp}',
+        f'job_exp: {p.job_exp}/{p.next_job_exp}',
+        f'zeny: {p.zeny}',
+        f'stats: STR:{p.str_} AGI:{p.agi} VIT:{p.vit} INT:{p.int_} DEX:{p.dex} LUK:{p.luk}',
+        f'status_point: {p.status_point}',
+        f'weight: {p.weight}/{p.max_weight}',
+        '',
+        'nearby_beings:',
+    ]
+    for b in client.nearby_beings(radius=30):
+        name = b.name or f'species:{b.species}'
+        hp_str = f' HP:{b.hp}/{b.max_hp}' if b.max_hp > 0 else ''
+        lines.append(f'  [{b.block_id}] {name} at ({b.x},{b.y}){hp_str}')
+    lines.append('')
+    lines.append('inventory:')
+    for idx in sorted(client.inventory.keys()):
+        item = client.inventory[idx]
+        lines.append(f'  [{idx}] {item_name(item.name_id)} x{item.amount}')
+    lines.append('')
+    lines.append('floor_items:')
+    for item in client.nearby_items(radius=15):
+        lines.append(f'  [{item.block_id}] {item_name(item.name_id)} x{item.amount} at ({item.x},{item.y})')
+    lines.append('')
+    lines.append('npc_dialog:')
+    if client.npc_dialog:
+        for msg in client.npc_dialog:
+            lines.append(f'  {msg}')
+    if client.npc_waiting_next:
+        lines.append('  [waiting: next]')
+    if client.npc_waiting_close:
+        lines.append('  [waiting: close]')
+    if client.npc_waiting_choice:
+        for i, c in enumerate(client.npc_choices, 1):
+            lines.append(f'  [{i}] {c}')
+        lines.append('  [waiting: choose N]')
+    lines.append('')
+    lines.append('recent_chat:')
+    for msg in client.chat_log[-10:]:
+        lines.append(f'  {msg}')
+    for sender, msg in client.whisper_log[-5:]:
+        lines.append(f'  [whisper from {sender}] {msg}')
+
+    cmap = load_collision(p.map_name)
+    if cmap:
+        lines.append('')
+        lines.append('minimap (radius 8, @=you #=wall .=path M=monster N=NPC $=item):')
+        view = cmap.render_around(p.x, p.y, 14,
+                                  beings=client.beings, items=client.floor_items)
+        for row in view.split('\n'):
+            lines.append(f'  {row}')
+
+    return '\n'.join(lines)
+
+
+# ---------------------------------------------------------------------------
+# MCP Server + Tools
+# ---------------------------------------------------------------------------
+
+def ensure_session(ctx: Context):
+    """Capture the ServerSession reference from the first tool call."""
+    if state.session_ref is None:
+        state.session_ref = ctx.session
+
+
+@asynccontextmanager
+async def lifespan(server: FastMCP):
+    """Start game client and loop on MCP startup, stop on shutdown."""
+    state.event_loop = asyncio.get_running_loop()
+    state.notification_queue = asyncio.Queue()
+
+    # Load credentials
+    creds_path = os.path.join(CLIENT_DIR, 'credentials.json')
+    with open(creds_path) as f:
+        creds = json.load(f)
+
+    log.info('Logging in as %s...', creds['username'])
+
+    # Clear log file
+    with open(LOG_FILE, 'w') as f:
+        f.write('')
+
+    # Login (blocking, but OK during startup)
+    client = GameClient(creds['server'], creds['port'])
+    if not client.full_login(creds['username'], creds['password'],
+                             creds.get('char_slot', 0)):
+        raise RuntimeError('Game login failed!')
+
+    state.client = client
+    state.running = True
+
+    log.info('Logged in as %s on %s', client.player.char_name, client.player.map_name)
+    write_log(f'MCP server started. Logged in as {client.player.char_name}.')
+
+    # Start game loop thread
+    state.game_thread = threading.Thread(target=game_loop, name='game-loop', daemon=True)
+    state.game_thread.start()
+
+    # Start notification forwarder
+    forward_task = asyncio.create_task(notification_forwarder())
+
+    try:
+        yield state
+    finally:
+        state.running = False
+        forward_task.cancel()
+        if state.game_thread:
+            state.game_thread.join(timeout=3.0)
+        if state.client:
+            state.client.disconnect()
+        log.info('MCP server shut down')
+
+
+mcp = FastMCP(
+    "tmw-bot",
+    instructions=(
+        "TMW game bot for The Mana World MMORPG. "
+        "Use tmw_state to see the game world, then use other tools to act. "
+        "Channel notifications will alert you to chat messages, NPC dialogs, "
+        "combat, and map changes."
+    ),
+    lifespan=lifespan,
+)
+
+
+# --- Game state tool ---
+
+@mcp.tool()
+def tmw_state(ctx: Context) -> str:
+    """Get current game state: character info, position, HP/SP, nearby beings, inventory, NPC dialog, minimap."""
+    ensure_session(ctx)
+    client = state.client
+    if not client:
+        return 'Game not connected'
+    return format_game_state(client)
+
+
+# --- Chat tools ---
+
+@mcp.tool()
+def tmw_say(ctx: Context, message: str) -> str:
+    """Send a public chat message in-game."""
+    ensure_session(ctx)
+    return send_command('say', message=message)
+
+
+@mcp.tool()
+def tmw_whisper(ctx: Context, target: str, message: str) -> str:
+    """Send a private message to a player."""
+    ensure_session(ctx)
+    return send_command('whisper', target=target, message=message)
+
+
+# --- Movement tools ---
+
+@mcp.tool()
+def tmw_walk(ctx: Context, x: int, y: int) -> str:
+    """Walk to coordinates (x, y)."""
+    ensure_session(ctx)
+    return send_command('walk', x=x, y=y)
+
+
+@mcp.tool()
+def tmw_face(ctx: Context, direction: int) -> str:
+    """Change facing direction (0=south, 2=west, 4=north, 6=east)."""
+    ensure_session(ctx)
+    return send_command('face', direction=direction)
+
+
+@mcp.tool()
+def tmw_sit(ctx: Context) -> str:
+    """Sit down."""
+    ensure_session(ctx)
+    return send_command('sit')
+
+
+@mcp.tool()
+def tmw_stand(ctx: Context) -> str:
+    """Stand up."""
+    ensure_session(ctx)
+    return send_command('stand')
+
+
+# --- Combat tools ---
+
+@mcp.tool()
+def tmw_attack(ctx: Context, target_id: int) -> str:
+    """Attack a being by ID (starts continuous attack)."""
+    ensure_session(ctx)
+    return send_command('attack', target_id=target_id)
+
+
+@mcp.tool()
+def tmw_stop_attack(ctx: Context) -> str:
+    """Stop auto-attack and hunting."""
+    ensure_session(ctx)
+    return send_command('stopattack')
+
+
+@mcp.tool()
+def tmw_hunt(ctx: Context, monster_name: str) -> str:
+    """Continuously hunt a monster type by name. Pass empty string to stop."""
+    ensure_session(ctx)
+    return send_command('hunt', monster_name=monster_name)
+
+
+@mcp.tool()
+def tmw_respawn(ctx: Context) -> str:
+    """Respawn after death."""
+    ensure_session(ctx)
+    return send_command('respawn')
+
+
+# --- Item tools ---
+
+@mcp.tool()
+def tmw_pickup(ctx: Context, item_id: int) -> str:
+    """Pick up a floor item by ID."""
+    ensure_session(ctx)
+    return send_command('pickup', item_id=item_id)
+
+
+@mcp.tool()
+def tmw_equip(ctx: Context, index: int) -> str:
+    """Equip an item by inventory index."""
+    ensure_session(ctx)
+    return send_command('equip', index=index)
+
+
+@mcp.tool()
+def tmw_use(ctx: Context, index: int) -> str:
+    """Use an item by inventory index."""
+    ensure_session(ctx)
+    return send_command('use', index=index)
+
+
+# --- NPC tools ---
+
+@mcp.tool()
+def tmw_npc(ctx: Context, npc_id: int) -> str:
+    """Click on an NPC to start dialog."""
+    ensure_session(ctx)
+    return send_command('npc', npc_id=npc_id)
+
+
+@mcp.tool()
+def tmw_npc_next(ctx: Context) -> str:
+    """Continue NPC dialog (click Next)."""
+    ensure_session(ctx)
+    return send_command('next')
+
+
+@mcp.tool()
+def tmw_npc_close(ctx: Context) -> str:
+    """Close NPC dialog."""
+    ensure_session(ctx)
+    return send_command('close')
+
+
+@mcp.tool()
+def tmw_npc_choose(ctx: Context, choice: int) -> str:
+    """Choose an NPC menu option (1-based index)."""
+    ensure_session(ctx)
+    return send_command('choose', choice=choice)
+
+
+# --- Social tools ---
+
+@mcp.tool()
+def tmw_follow(ctx: Context, target: str) -> str:
+    """Follow a player by name or ID. Pass empty string to stop."""
+    ensure_session(ctx)
+    return send_command('follow', target=target)
+
+
+@mcp.tool()
+def tmw_emote(ctx: Context, emote_id: int) -> str:
+    """Send an emote."""
+    ensure_session(ctx)
+    return send_command('emote', emote_id=emote_id)
+
+
+# --- Character tools ---
+
+@mcp.tool()
+def tmw_stat(ctx: Context, stat_name: str) -> str:
+    """Increase a stat: str, agi, vit, int, dex, or luk."""
+    ensure_session(ctx)
+    return send_command('stat', stat_name=stat_name)
+
+
+@mcp.tool()
+def tmw_map(ctx: Context, radius: int = 10) -> str:
+    """Show ASCII minimap around current position."""
+    ensure_session(ctx)
+    return send_command('map', radius=radius)
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+if __name__ == '__main__':
+    mcp.run(transport='stdio')

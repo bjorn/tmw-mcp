@@ -31,11 +31,12 @@ NPC_LOG = 'npc_history.log'
 log = logging.getLogger('bot')
 
 
-def write_log(msg: str):
-    """Append a message to the log file and print it."""
+def write_log(msg: str, to_stderr: bool = False):
+    """Append a message to the log file, optionally print to stderr."""
     timestamp = time.strftime('%H:%M:%S')
     line = f'[{timestamp}] {msg}'
-    print(line)
+    if to_stderr:
+        print(line, file=sys.stderr)
     with open(LOG_FILE, 'a') as f:
         f.write(line + '\n')
 
@@ -344,6 +345,117 @@ def execute_command(client: GameClient, cmd: str):
         write_log(f'Unknown command: {cmd}')
 
 
+def format_event(client: GameClient, etype: str, data) -> str | None:
+    """Format a game event as a human-readable string. Returns None for silent events."""
+    if etype == 'chat':
+        return f'[Chat] {data.message}'
+    elif etype == 'whisper':
+        return f'[Whisper from {data.sender}] {data.message}'
+    elif etype == 'gm_chat':
+        return f'[GM] {data.message}'
+    elif etype == 'npc_message':
+        return f'[NPC] {data.message}'
+    elif etype == 'npc_next':
+        return '[NPC waits - send "next"]'
+    elif etype == 'npc_close':
+        return '[NPC done - send "close"]'
+    elif etype == 'npc_choice':
+        return f'[NPC choices: {", ".join(f"{i+1}={c}" for i, c in enumerate(data.choices))}]'
+    elif etype == 'map_change':
+        return f'[Warped to {data.map_name} ({data.x},{data.y})]'
+    elif etype == 'action' and data.damage > 0:
+        if data.dst_id == client.account_id:
+            return f'[Hit] took {data.damage} damage'
+    elif etype == 'being_remove' and data.reason == 1:
+        return f'[Died] #{data.block_id}'
+    return None
+
+
+# Events that should push a channel notification to wake Claude
+WAKEUP_EVENTS = {
+    'chat', 'whisper', 'gm_chat',
+    'npc_message', 'npc_next', 'npc_close', 'npc_choice',
+    'map_change', 'map_server_change',
+}
+
+
+def is_wakeup_event(client: GameClient, etype: str, data) -> bool:
+    """Return True if this event should wake Claude via channel notification."""
+    if etype in WAKEUP_EVENTS:
+        return True
+    if etype == 'action' and data.damage > 0 and data.dst_id == client.account_id:
+        return True
+    if etype == 'being_remove' and data.reason == 1 and data.block_id == client.account_id:
+        return True
+    return False
+
+
+def run_auto_behaviors(client: GameClient, tick_count: int):
+    """Run automated behaviors: auto-attack, hunt, follow, board."""
+    # Auto-attack: chase target into melee range and keep attacking
+    auto_target = getattr(client, '_auto_attack_target', 0)
+    if auto_target and tick_count % 10 == 0:
+        if auto_target in client.beings:
+            target = client.beings[auto_target]
+            px, py = client.player.x, client.player.y
+            dx = abs(target.x - px)
+            dy = abs(target.y - py)
+            if dx > 2 or dy > 2:
+                client.walk_to(target.x, target.y)
+            else:
+                client.attack(auto_target, continuous=True)
+        else:
+            client._auto_attack_target = 0
+            write_log(f'[Auto-attack target #{auto_target} gone]')
+
+    # Hunt mode: find nearest monster of target type and attack it
+    hunt_type = getattr(client, '_hunt_type', '')
+    if hunt_type and not auto_target and tick_count % 8 == 0:
+        px, py = client.player.x, client.player.y
+        best = None
+        best_dist = 999
+        for b in client.beings.values():
+            if b.name.lower() == hunt_type.lower() and b.max_hp > 0:
+                dist = abs(b.x - px) + abs(b.y - py)
+                if dist < best_dist:
+                    best = b
+                    best_dist = dist
+        if best:
+            client._auto_attack_target = best.block_id
+            if best_dist > 2:
+                client.walk_to(best.x, best.y)
+            else:
+                client.attack(best.block_id, continuous=True)
+        elif client.floor_items:
+            for item in client.nearby_items(radius=3):
+                client.walk_to(item.x, item.y)
+                client.pickup(item.block_id)
+                break
+
+    # Board: keep trying to click a dock NPC until we warp
+    board_target = getattr(client, '_board_target', 0)
+    if board_target and tick_count % 15 == 0:
+        from packets import build_npc_close, build_npc_click
+        client.map_conn.send_packet(build_npc_close(board_target))
+        client.map_conn.send_packet(build_npc_click(board_target))
+
+    # Follow: stay within 3 tiles of target player
+    follow_target = getattr(client, '_follow_target', 0)
+    if follow_target and tick_count % 8 == 0:
+        if follow_target in client.beings:
+            target = client.beings[follow_target]
+            px, py = client.player.x, client.player.y
+            dx = abs(target.x - px)
+            dy = abs(target.y - py)
+            if dx > 3 or dy > 3:
+                tx = target.x + (1 if px > target.x else -1 if px < target.x else 0)
+                ty = target.y + (1 if py > target.y else -1 if py < target.y else 0)
+                client.walk_to(tx, ty)
+        else:
+            client._follow_target = 0
+            write_log('[Follow target gone]')
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser(description='TMW Bot')
@@ -366,153 +478,75 @@ def main():
     with open(args.credentials) as f:
         creds = json.load(f)
 
-    write_log(f'Logging in as {creds["username"]}...')
+    write_log(f'Logging in as {creds["username"]}...', to_stderr=True)
 
     client = GameClient(creds['server'], creds['port'])
     if not client.full_login(creds['username'], creds['password'],
                              creds.get('char_slot', 0)):
-        write_log('Login failed!')
+        write_log('Login failed!', to_stderr=True)
         sys.exit(1)
 
-    write_log(f'Logged in as {client.player.char_name}!')
-    write_log(f'Map: {client.player.map_name} ({client.player.x},{client.player.y})')
+    write_log(f'Logged in as {client.player.char_name}!', to_stderr=True)
+    write_log(f'Map: {client.player.map_name} ({client.player.x},{client.player.y})', to_stderr=True)
 
     # Request names for all visible beings
     for b_id in list(client.beings.keys()):
         client.request_name(b_id)
 
     # Main loop
-    write_log('Bot running. Write commands to cmd.txt.')
+    write_log('Bot running. Write commands to cmd.txt.', to_stderr=True)
     tick_count = 0
     try:
         while True:
             # Process incoming packets
             events = client.process_packets(timeout=0.2)
             for event in events:
-                etype = event[0]
-                data = event[1]
+                etype, data = event[0], event[1]
+                msg = format_event(client, etype, data)
+                if msg:
+                    write_log(msg, to_stderr=True)
+
+                # Persistent logging for chat/NPC
                 if etype == 'chat':
-                    write_log(f'[Chat] {data.message}')
                     write_chat_log(data.message)
                 elif etype == 'whisper':
-                    write_log(f'[Whisper from {data.sender}] {data.message}')
                     write_chat_log(f'[whisper from {data.sender}] {data.message}')
                 elif etype == 'gm_chat':
-                    write_log(f'[GM] {data.message}')
                     write_chat_log(f'[GM] {data.message}')
                 elif etype == 'npc_message':
-                    write_log(f'[NPC] {data.message}')
                     npc_name = client.beings.get(data.npc_id, None)
                     npc_name = npc_name.name if npc_name else f'NPC#{data.npc_id}'
                     write_npc_log(npc_name, data.message)
-                elif etype == 'npc_next':
-                    write_log('[NPC waits - send "next"]')
-                elif etype == 'npc_close':
-                    write_log('[NPC done - send "close"]')
-                elif etype == 'npc_choice':
-                    write_log(f'[NPC choices: {", ".join(f"{i+1}={c}" for i, c in enumerate(data.choices))}]')
                 elif etype == 'map_change':
-                    write_log(f'[Warped to {data.map_name} ({data.x},{data.y})]')
                     if getattr(client, '_board_target', 0):
                         client._board_target = 0
-                        write_log('[Boarded! Stopped retry.]')
-                elif etype == 'action' and data.damage > 0:
-                    if data.dst_id == client.account_id:
-                        write_log(f'[Hit] took {data.damage} damage')
-                elif etype == 'being_remove' and data.reason == 1:
-                    write_log(f'[Died] #{data.block_id}')
-                elif etype == 'name':
-                    pass  # Silently stored
+                        write_log('[Boarded! Stopped retry.]', to_stderr=True)
 
-                # Watch mode: log movement of a specific being
+                # Watch mode
                 watch_id = getattr(client, '_watch_id', 0)
                 if watch_id and hasattr(data, 'block_id') and data.block_id == watch_id:
                     if etype == 'being_visible':
-                        write_log(f'[WATCH] VISIBLE at ({data.x},{data.y})')
+                        write_log(f'[WATCH] VISIBLE at ({data.x},{data.y})', to_stderr=True)
                     elif etype == 'being_move':
-                        write_log(f'[WATCH] MOVE ({data.x0},{data.y0})->({data.x1},{data.y1})')
+                        write_log(f'[WATCH] MOVE ({data.x0},{data.y0})->({data.x1},{data.y1})', to_stderr=True)
                     elif etype == 'stop':
-                        write_log(f'[WATCH] STOP at ({data.x},{data.y})')
+                        write_log(f'[WATCH] STOP at ({data.x},{data.y})', to_stderr=True)
                     elif etype == 'being_remove':
-                        write_log(f'[WATCH] REMOVE reason={data.reason}')
+                        write_log(f'[WATCH] REMOVE reason={data.reason}', to_stderr=True)
 
-            # Auto-attack: chase target into melee range and keep attacking
-            auto_target = getattr(client, '_auto_attack_target', 0)
-            if auto_target and tick_count % 10 == 0:
-                if auto_target in client.beings:
-                    target = client.beings[auto_target]
-                    px, py = client.player.x, client.player.y
-                    dx = abs(target.x - px)
-                    dy = abs(target.y - py)
-                    if dx > 2 or dy > 2:
-                        # Too far - walk closer (but don't walk on top, it cancels attack)
-                        client.walk_to(target.x, target.y)
-                    else:
-                        # In range - just attack, don't walk
-                        client.attack(auto_target, continuous=True)
-                else:
-                    client._auto_attack_target = 0
-                    write_log(f'[Auto-attack target #{auto_target} gone]')
-
-            # Hunt mode: find nearest monster of target type and attack it
-            hunt_type = getattr(client, '_hunt_type', '')
-            if hunt_type and not auto_target and tick_count % 8 == 0:
-                px, py = client.player.x, client.player.y
-                best = None
-                best_dist = 999
-                for b in client.beings.values():
-                    if b.name.lower() == hunt_type.lower() and b.max_hp > 0:
-                        dist = abs(b.x - px) + abs(b.y - py)
-                        if dist < best_dist:
-                            best = b
-                            best_dist = dist
-                if best:
-                    client._auto_attack_target = best.block_id
-                    if best_dist > 2:
-                        client.walk_to(best.x, best.y)
-                    else:
-                        client.attack(best.block_id, continuous=True)
-                elif client.floor_items:
-                    # No monsters around - pick up nearby items
-                    for item in client.nearby_items(radius=3):
-                        client.walk_to(item.x, item.y)
-                        client.pickup(item.block_id)
-                        break
-
-            # Board: keep trying to click a dock NPC until we warp
-            board_target = getattr(client, '_board_target', 0)
-            if board_target and tick_count % 15 == 0:
-                from packets import build_npc_close, build_npc_click
-                client.map_conn.send_packet(build_npc_close(board_target))
-                client.map_conn.send_packet(build_npc_click(board_target))
-
-            # Follow: stay within 3 tiles of target player
-            follow_target = getattr(client, '_follow_target', 0)
-            if follow_target and tick_count % 8 == 0:
-                if follow_target in client.beings:
-                    target = client.beings[follow_target]
-                    px, py = client.player.x, client.player.y
-                    dx = abs(target.x - px)
-                    dy = abs(target.y - py)
-                    if dx > 3 or dy > 3:
-                        # Walk to 2 tiles away from target
-                        tx = target.x + (1 if px > target.x else -1 if px < target.x else 0)
-                        ty = target.y + (1 if py > target.y else -1 if py < target.y else 0)
-                        client.walk_to(tx, ty)
-                else:
-                    client._follow_target = 0
-                    write_log(f'[Follow target gone]')
+            # Automated behaviors
+            run_auto_behaviors(client, tick_count)
 
             # Send keepalive
             client.send_ping()
 
             # Read commands (manual commands override AI)
             for cmd in read_commands():
-                write_log(f'> {cmd}')
+                write_log(f'> {cmd}', to_stderr=True)
                 try:
                     execute_command(client, cmd)
                 except Exception as e:
-                    write_log(f'Command error: {e}')
+                    write_log(f'Command error: {e}', to_stderr=True)
 
             # Write state every ~1 second
             tick_count += 1
