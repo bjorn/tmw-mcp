@@ -303,6 +303,14 @@ def execute_command(client: GameClient, cmd: str):
         client.disconnect()
         os.execv(sys.executable, [sys.executable] + sys.argv)
 
+    elif action == 'use':
+        # Use an item by inventory index
+        import struct
+        index = int(args)
+        pkt = struct.pack('<HHI', 0x00a7, index, 0)
+        client.map_conn.send_packet(pkt)
+        write_log(f'Using item at index {index}')
+
     elif action == 'board':
         # Keep trying to board a ferry/portal until it works
         npc_id = int(args) if args else 0
