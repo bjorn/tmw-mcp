@@ -128,6 +128,19 @@ def read_commands() -> list[str]:
         return []
 
 
+def is_safe_message(msg: str) -> bool:
+    """Check that a message doesn't contain credentials."""
+    try:
+        with open('credentials.json') as f:
+            creds = json.load(f)
+        password = creds.get('password', '')
+        if password and password in msg:
+            return False
+    except (OSError, json.JSONDecodeError):
+        pass
+    return True
+
+
 def execute_command(client: GameClient, cmd: str):
     """Execute a single command."""
     parts = cmd.split(maxsplit=1)
@@ -135,12 +148,18 @@ def execute_command(client: GameClient, cmd: str):
     args = parts[1] if len(parts) > 1 else ''
 
     if action == 'say':
+        if not is_safe_message(args):
+            write_log('BLOCKED: message contained credentials!')
+            return
         client.say(args)
         write_log(f'Said: {args}')
 
     elif action == 'whisper':
         wparts = args.split(maxsplit=1)
         if len(wparts) == 2:
+            if not is_safe_message(wparts[1]):
+                write_log('BLOCKED: whisper contained credentials!')
+                return
             client.whisper(wparts[0], wparts[1])
             write_log(f'Whispered to {wparts[0]}: {wparts[1]}')
 
