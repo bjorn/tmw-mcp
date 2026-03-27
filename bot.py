@@ -141,7 +141,17 @@ def execute_command(client: GameClient, cmd: str):
 
     elif action == 'stopattack':
         client._auto_attack_target = 0
-        write_log('Stopped auto-attack')
+        client._hunt_type = ''
+        write_log('Stopped auto-attack and hunting')
+
+    elif action == 'hunt':
+        # Continuously hunt a monster type by name
+        if args:
+            client._hunt_type = args.strip()
+            write_log(f'Hunting mode: {client._hunt_type}')
+        else:
+            client._hunt_type = ''
+            write_log('Stopped hunting')
 
     elif action == 'pickup':
         item_id = int(args)
@@ -328,6 +338,25 @@ def main():
                 else:
                     client._auto_attack_target = 0
                     write_log(f'[Auto-attack target #{auto_target} gone]')
+
+            # Hunt mode: find nearest monster of target type and attack it
+            hunt_type = getattr(client, '_hunt_type', '')
+            if hunt_type and not auto_target and tick_count % 8 == 0:
+                px, py = client.player.x, client.player.y
+                best = None
+                best_dist = 999
+                for b in client.beings.values():
+                    if b.name.lower() == hunt_type.lower() and b.max_hp > 0:
+                        dist = abs(b.x - px) + abs(b.y - py)
+                        if dist < best_dist:
+                            best = b
+                            best_dist = dist
+                if best:
+                    client._auto_attack_target = best.block_id
+                    if best_dist > 2:
+                        client.walk_to(best.x, best.y)
+                    else:
+                        client.attack(best.block_id, continuous=True)
 
             # Follow: stay within 3 tiles of target player
             follow_target = getattr(client, '_follow_target', 0)
