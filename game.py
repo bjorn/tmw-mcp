@@ -670,13 +670,7 @@ class GameClient:
         self.map_conn.send_packet(build_whisper(target, message))
 
     def walk_to(self, x: int, y: int):
-        """Walk to a position, throttled to avoid mid-walk interruptions."""
-        now = time.time()
-        last_walk = getattr(self, '_last_walk_time', 0.0)
-        # Minimum 1 second between walks to let the previous one progress
-        if now - last_walk < 1.0:
-            return
-        self._last_walk_time = now
+        """Walk to a position."""
         self.map_conn.send_packet(build_walk(x, y))
 
     def attack(self, target_id: int, continuous: bool = False):
