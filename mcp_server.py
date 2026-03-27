@@ -668,4 +668,14 @@ def tmw_map(ctx: Context, radius: int = 10) -> str:
 # ---------------------------------------------------------------------------
 
 if __name__ == '__main__':
-    mcp.run(transport='stdio')
+    import anyio
+    from mcp.server.stdio import stdio_server
+
+    async def run_stdio_with_channel():
+        async with stdio_server() as (read_stream, write_stream):
+            init_options = mcp._mcp_server.create_initialization_options(
+                experimental_capabilities={'claude/channel': {}},
+            )
+            await mcp._mcp_server.run(read_stream, write_stream, init_options)
+
+    anyio.run(run_stdio_with_channel)
