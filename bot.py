@@ -90,7 +90,7 @@ def write_state(client: GameClient):
     if cmap:
         lines.append('')
         lines.append('minimap (radius 8, @=you #=wall .=path M=monster N=NPC $=item):')
-        view = cmap.render_around(p.x, p.y, 8,
+        view = cmap.render_around(p.x, p.y, 14,
                                   beings=client.beings, items=client.floor_items)
         for row in view.split('\n'):
             lines.append(f'  {row}')
