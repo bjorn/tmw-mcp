@@ -379,6 +379,12 @@ def main():
                         client.walk_to(best.x, best.y)
                     else:
                         client.attack(best.block_id, continuous=True)
+                elif client.floor_items:
+                    # No monsters around - pick up nearby items
+                    for item in client.nearby_items(radius=3):
+                        client.walk_to(item.x, item.y)
+                        client.pickup(item.block_id)
+                        break
 
             # Follow: stay within 3 tiles of target player
             follow_target = getattr(client, '_follow_target', 0)
