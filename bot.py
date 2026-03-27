@@ -84,6 +84,16 @@ def write_state(client: GameClient):
         lines.append(f'  {msg}')
     for sender, msg in client.whisper_log[-5:]:
         lines.append(f'  [whisper from {sender}] {msg}')
+    # Minimap
+    from maps import load_collision
+    cmap = load_collision(p.map_name)
+    if cmap:
+        lines.append('')
+        lines.append('minimap (radius 8, @=you #=wall .=path M=monster N=NPC $=item):')
+        view = cmap.render_around(p.x, p.y, 8,
+                                  beings=client.beings, items=client.floor_items)
+        for row in view.split('\n'):
+            lines.append(f'  {row}')
 
     with open(STATE_FILE, 'w') as f:
         f.write('\n'.join(lines) + '\n')
@@ -209,6 +219,18 @@ def execute_command(client: GameClient, cmd: str):
             write_log(f'Increasing {stat_name.upper()}')
         else:
             write_log(f'Unknown stat: {args}. Use: str, agi, vit, int, dex, luk')
+
+    elif action == 'map':
+        from maps import load_collision
+        radius = int(args) if args else 10
+        cmap = load_collision(client.player.map_name)
+        if cmap:
+            view = cmap.render_around(
+                client.player.x, client.player.y, radius,
+                beings=client.beings, items=client.floor_items)
+            write_log(f'Map around ({client.player.x},{client.player.y}):\n{view}')
+        else:
+            write_log(f'No collision data for {client.player.map_name}')
 
     elif action == 'respawn':
         client.respawn()
