@@ -229,6 +229,13 @@ def build_change_dir(direction: int) -> bytes:
     return struct.pack('<HHB', 0x009b, 0, direction)
 
 
+def build_stat_increase(sp_type: int) -> bytes:
+    """0x00bb: Spend a status point to increase a stat.
+    sp_type: 0x000d=STR, 0x000e=AGI, 0x000f=VIT, 0x0010=INT, 0x0011=DEX, 0x0012=LUK
+    """
+    return struct.pack('<HHB', 0x00bb, sp_type, 0)
+
+
 def build_item_pickup(object_id: int) -> bytes:
     """0x009f: Pick up an item from the ground."""
     return struct.pack('<HI', 0x009f, object_id)

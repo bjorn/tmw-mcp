@@ -186,6 +186,20 @@ def execute_command(client: GameClient, cmd: str):
         block_id = int(args)
         client.request_name(block_id)
 
+    elif action == 'stat':
+        # Increase a stat: stat STR, stat AGI, stat VIT, stat INT, stat DEX, stat LUK
+        from packets import build_stat_increase
+        stat_map = {
+            'str': 0x000d, 'agi': 0x000e, 'vit': 0x000f,
+            'int': 0x0010, 'dex': 0x0011, 'luk': 0x0012,
+        }
+        stat_name = args.lower().strip()
+        if stat_name in stat_map:
+            client.map_conn.send_packet(build_stat_increase(stat_map[stat_name]))
+            write_log(f'Increasing {stat_name.upper()}')
+        else:
+            write_log(f'Unknown stat: {args}. Use: str, agi, vit, int, dex, luk')
+
     elif action == 'respawn':
         client.respawn()
         write_log('Respawning')
