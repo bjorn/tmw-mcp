@@ -1006,6 +1006,22 @@ def parse_packet(packet_id: int, data: bytes):
             damage=struct.unpack_from('<I', data, 24)[0],
         )
 
+    elif packet_id == 0x00a4:
+        # Equipment list: head=4, repeat_size=20
+        length = struct.unpack_from('<H', data, 2)[0]
+        result = InventoryList()
+        n_items = (length - 4) // 20
+        for i in range(n_items):
+            off = 4 + i * 20
+            item = InventoryItem(
+                index=struct.unpack_from('<H', data, off)[0],
+                name_id=struct.unpack_from('<H', data, off + 2)[0],
+                item_type=data[off + 4],
+                amount=1,
+            )
+            result.items.append(item)
+        return result
+
     elif packet_id == 0x01ee:
         # Inventory list: head=4, repeat_size=18
         # repeat: ioff2(u16) + name_id(u16) + item_type(u8) + identify(u8)
