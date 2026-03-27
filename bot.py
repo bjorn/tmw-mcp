@@ -166,12 +166,13 @@ def execute_command(client: GameClient, cmd: str):
     elif action == 'close':
         # Force send close packet regardless of client state
         from packets import build_npc_close
-        client.map_conn.send_packet(build_npc_close(client.npc_id))
+        npc_id = int(args) if args else client.npc_id
+        client.map_conn.send_packet(build_npc_close(npc_id))
         client.npc_waiting_close = False
         client.npc_waiting_next = False
         client.npc_waiting_choice = False
         client.npc_dialog.clear()
-        write_log('NPC: close (forced)')
+        write_log(f'NPC: close #{npc_id} (forced)')
 
     elif action == 'choose':
         client.npc_choose(int(args))
@@ -189,10 +190,37 @@ def execute_command(client: GameClient, cmd: str):
         client.respawn()
         write_log('Respawning')
 
+    elif action == 'follow':
+        if args:
+            # Find player by name or ID
+            target_id = None
+            try:
+                target_id = int(args)
+            except ValueError:
+                for b in client.beings.values():
+                    if b.name.lower() == args.lower():
+                        target_id = b.block_id
+                        break
+            if target_id:
+                client._follow_target = target_id
+                name = client.beings.get(target_id)
+                name = name.name if name else f'#{target_id}'
+                write_log(f'Following {name}')
+            else:
+                write_log(f'Cannot find player: {args}')
+        else:
+            client._follow_target = 0
+            write_log('Stopped following')
+
     elif action == 'quit':
         write_log('Quit requested')
         client.disconnect()
         sys.exit(0)
+
+    elif action == 'restart':
+        write_log('Restarting bot...')
+        client.disconnect()
+        os.execv(sys.executable, [sys.executable] + sys.argv)
 
     else:
         write_log(f'Unknown command: {cmd}')
@@ -269,19 +297,45 @@ def main():
                 elif etype == 'name':
                     pass  # Silently stored
 
-            # Re-send auto-attack if target still alive
+            # Auto-attack: chase target into melee range and keep attacking
             auto_target = getattr(client, '_auto_attack_target', 0)
             if auto_target and tick_count % 10 == 0:
                 if auto_target in client.beings:
-                    client.attack(auto_target, continuous=True)
+                    target = client.beings[auto_target]
+                    px, py = client.player.x, client.player.y
+                    dx = abs(target.x - px)
+                    dy = abs(target.y - py)
+                    if dx > 2 or dy > 2:
+                        # Too far - walk closer (but don't walk on top, it cancels attack)
+                        client.walk_to(target.x, target.y)
+                    else:
+                        # In range - just attack, don't walk
+                        client.attack(auto_target, continuous=True)
                 else:
                     client._auto_attack_target = 0
                     write_log(f'[Auto-attack target #{auto_target} gone]')
 
+            # Follow: stay within 3 tiles of target player
+            follow_target = getattr(client, '_follow_target', 0)
+            if follow_target and tick_count % 8 == 0:
+                if follow_target in client.beings:
+                    target = client.beings[follow_target]
+                    px, py = client.player.x, client.player.y
+                    dx = abs(target.x - px)
+                    dy = abs(target.y - py)
+                    if dx > 3 or dy > 3:
+                        # Walk to 2 tiles away from target
+                        tx = target.x + (1 if px > target.x else -1 if px < target.x else 0)
+                        ty = target.y + (1 if py > target.y else -1 if py < target.y else 0)
+                        client.walk_to(tx, ty)
+                else:
+                    client._follow_target = 0
+                    write_log(f'[Follow target gone]')
+
             # Send keepalive
             client.send_ping()
 
-            # Read commands
+            # Read commands (manual commands override AI)
             for cmd in read_commands():
                 write_log(f'> {cmd}')
                 try:
