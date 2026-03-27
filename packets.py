@@ -957,9 +957,10 @@ def parse_packet(packet_id: int, data: bytes):
         )
 
     elif packet_id == 0x0141:
+        # stat update 3: sp_type(u16) + zero(u16) + base(u32) + bonus(u32)
         return StatUpdate1(
             sp_type=struct.unpack_from('<H', data, 2)[0],
-            value=struct.unpack_from('<I', data, 4)[0],
+            value=struct.unpack_from('<I', data, 6)[0],  # base stat at offset 6
         )
 
     elif packet_id == 0x0196:
