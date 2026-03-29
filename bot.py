@@ -388,6 +388,8 @@ def format_event(client: GameClient, etype: str, data) -> str | None:
         return f'[Died] #{data.block_id}'
     elif etype == 'being_effect' and data.effect_type == 402:
         return '[Ferry] Ship bell! Ferry has docked - exit now if this is your stop!'
+    elif etype == 'party_invited':
+        return f'[Party] Invited to party "{data.party_name}" by account #{data.account_id}. Use tmw_party_reply to accept or reject.'
     return None
 
 
@@ -410,6 +412,8 @@ def is_wakeup_event(client: GameClient, etype: str, data) -> bool:
     if etype == 'being_remove' and data.reason == 1 and data.block_id == client.account_id:
         return True
     if etype == 'being_effect' and data.effect_type == 402:
+        return True
+    if etype == 'party_invited':
         return True
     return False
 

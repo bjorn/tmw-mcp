@@ -78,6 +78,8 @@ from packets import (
     BeingStatusChange,
     PlayerStatusChange,
     BeingEffect,
+    PartyInvited,
+    build_party_reply,
     NpcBuySellChoice,
     NpcBuyList,
     NpcSellList,
@@ -703,6 +705,9 @@ class GameClient:
         elif isinstance(pkt, BeingEffect):
             return ('being_effect', pkt)
 
+        elif isinstance(pkt, PartyInvited):
+            return ('party_invited', pkt)
+
         elif isinstance(pkt, tuple):
             if pkt[0] == 'pong':
                 return None  # Silently handle pong
@@ -837,6 +842,10 @@ class GameClient:
     def request_name(self, block_id: int):
         """Request a being's name."""
         self.map_conn.send_packet(build_name_request(block_id))
+
+    def party_reply(self, account_id: int, accept: bool):
+        """Accept or reject a party invitation."""
+        self.map_conn.send_packet(build_party_reply(account_id, accept))
 
     def respawn(self):
         """Respawn after death."""

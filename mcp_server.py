@@ -278,6 +278,11 @@ def _execute_tool_command(client: GameClient, cmd: str, kw: dict) -> str:
         client.respawn()
         return 'Respawning'
 
+    elif cmd == 'party_reply':
+        client.party_reply(kw['account_id'], kw['accept'])
+        action = 'Accepted' if kw['accept'] else 'Rejected'
+        return f'{action} party invite from #{kw["account_id"]}'
+
     elif cmd == 'map':
         cmap = load_collision(client.player.map_name)
         if cmap:
@@ -613,6 +618,13 @@ def tmw_respawn(ctx: Context) -> str:
     """Respawn after death."""
     ensure_session(ctx)
     return send_command('respawn')
+
+
+@mcp.tool()
+def tmw_party_reply(ctx: Context, account_id: int, accept: bool = True) -> str:
+    """Accept or reject a party invitation."""
+    ensure_session(ctx)
+    return send_command('party_reply', account_id=account_id, accept=accept)
 
 
 # --- Item tools ---

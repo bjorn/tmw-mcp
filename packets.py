@@ -317,6 +317,11 @@ def build_party_message(message: str) -> bytes:
     return pkt
 
 
+def build_party_reply(account_id: int, accept: bool) -> bytes:
+    """0x00ff: Reply to party invitation. accept=True to join, False to reject."""
+    return struct.pack('<HIi', 0x00ff, account_id, 1 if accept else 0)
+
+
 # ---------------------------------------------------------------------------
 # Packet parsers (server -> client)
 # ---------------------------------------------------------------------------
@@ -703,6 +708,13 @@ class BeingEffect:
     effect_type: int = 0
 
 
+@dataclass
+class PartyInvited:
+    """0x00fe: You're invited to join a party."""
+    account_id: int = 0
+    party_name: str = ''
+
+
 # ---------------------------------------------------------------------------
 # Packet parser dispatch
 # ---------------------------------------------------------------------------
@@ -1083,6 +1095,12 @@ def parse_packet(packet_id: int, data: bytes):
         return BeingEffect(
             block_id=struct.unpack_from('<I', data, 2)[0],
             effect_type=struct.unpack_from('<I', data, 6)[0],
+        )
+
+    elif packet_id == 0x00fe:
+        return PartyInvited(
+            account_id=struct.unpack_from('<I', data, 2)[0],
+            party_name=data[6:30].rstrip(b'\x00').decode('latin-1'),
         )
 
     elif packet_id == 0x01c8:
