@@ -170,8 +170,17 @@ def _execute_tool_command(client: GameClient, cmd: str, kw: dict) -> str:
         return f'Hunting: {name}' if name else 'Stopped hunting'
 
     elif cmd == 'pickup':
-        client.pickup(kw['item_id'])
-        return f'Picking up #{kw["item_id"]}'
+        item_id = kw['item_id']
+        # Auto-walk to item if not adjacent
+        for item in client.floor_items.values():
+            if item.block_id == item_id:
+                px, py = client.player.x, client.player.y
+                dx, dy = abs(item.x - px), abs(item.y - py)
+                if dx > 1 or dy > 1:
+                    client.walk_to(item.x, item.y)
+                break
+        client.pickup(item_id)
+        return f'Picking up #{item_id}'
 
     elif cmd == 'npc':
         client.click_npc(kw['npc_id'])
