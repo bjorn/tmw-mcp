@@ -74,8 +74,9 @@ def write_state(client: GameClient):
         '',
         'nearby_beings:',
     ]
+    from monsters import monster_name
     for b in client.nearby_beings(radius=30):
-        name = b.name or f'species:{b.species}'
+        name = b.name or monster_name(b.species)
         hp_str = f' HP:{b.hp}/{b.max_hp}' if b.max_hp > 0 else ''
         lines.append(f'  [{b.block_id}] {name} at ({b.x},{b.y}){hp_str}')
     lines.append('')
@@ -432,14 +433,15 @@ def run_auto_behaviors(client: GameClient, tick_count: int):
             client._auto_attack_target = 0
             write_log(f'[Auto-attack target #{auto_target} gone]')
 
-    # Hunt mode: find nearest monster of target type and attack it
+    # Hunt mode: find nearest monster of target type(s) and attack it
     hunt_type = getattr(client, '_hunt_type', '')
     if hunt_type and not auto_target and tick_count % 4 == 0:
+        hunt_names = [n.strip().lower() for n in hunt_type.split(',')]
         px, py = client.player.x, client.player.y
         best = None
         best_dist = 999
         for b in client.beings.values():
-            if b.name.lower() == hunt_type.lower() and b.max_hp > 0:
+            if b.name.lower() in hunt_names and b.max_hp > 0:
                 dist = abs(b.x - px) + abs(b.y - py)
                 if dist < best_dist:
                     best = b

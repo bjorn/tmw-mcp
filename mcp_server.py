@@ -47,6 +47,7 @@ from bot import (
 )
 from items import item_name
 from maps import load_collision
+from monsters import monster_name
 
 log = logging.getLogger('mcp_server')
 
@@ -78,7 +79,7 @@ def push_notification(content: str):
         state.event_loop.call_soon_threadsafe(
             state.notification_queue.put_nowait, content
         )
-        log.debug('Queued notification: %s', content[:80])
+        log.info('Queued notification: %s', content[:80])
     else:
         log.warning('Cannot push notification (no event loop/queue): %s', content[:80])
 
@@ -100,7 +101,7 @@ async def notification_forwarder():
                 message=JSONRPCMessage.model_validate(notif.model_dump())
             )
             await session.send_message(msg)
-            log.debug('Sent notification OK: %s', content[:80])
+            log.info('Sent notification OK: %s', content[:80])
         except Exception as e:
             log.warning('Failed to send channel notification: %s: %s', type(e).__name__, e)
 
@@ -297,6 +298,7 @@ def game_loop():
     """Synchronous game loop running in a dedicated thread."""
     client = state.client
     tick_count = 0
+    death_notified = False
 
     # Request names for visible beings
     for b_id in list(client.beings.keys()):
@@ -336,6 +338,7 @@ def game_loop():
                 npc_name = npc_name.name if npc_name else f'NPC#{data.npc_id}'
                 write_npc_log(npc_name, data.message)
             elif etype == 'map_change':
+                death_notified = False
                 if getattr(client, '_board_target', 0):
                     client._board_target = 0
                     write_log('[Boarded! Stopped retry.]')
@@ -347,7 +350,11 @@ def game_loop():
                 if etype == 'action' and data.damage > 0:
                     notif_msg = f'[Combat] Took {data.damage} damage (HP: {client.player.hp}/{client.player.max_hp})'
                 elif etype == 'being_remove' and data.reason == 1 and data.block_id == client.account_id:
-                    notif_msg = '[Death] You died!'
+                    if not death_notified:
+                        notif_msg = '[Death] You died!'
+                        death_notified = True
+                    else:
+                        notif_msg = None
                 if notif_msg:
                     push_notification(notif_msg)
 
@@ -398,7 +405,7 @@ def format_game_state(client: GameClient) -> str:
         'nearby_beings:',
     ]
     for b in client.nearby_beings(radius=30):
-        name = b.name or f'species:{b.species}'
+        name = b.name or monster_name(b.species)
         hp_str = f' HP:{b.hp}/{b.max_hp}' if b.max_hp > 0 else ''
         lines.append(f'  [{b.block_id}] {name} at ({b.x},{b.y}){hp_str}')
     lines.append('')
@@ -596,7 +603,7 @@ def tmw_stop_attack(ctx: Context) -> str:
 
 @mcp.tool()
 def tmw_hunt(ctx: Context, monster_name: str) -> str:
-    """Continuously hunt a monster type by name. Pass empty string to stop."""
+    """Continuously hunt monster(s) by name. Comma-separated for multiple types. Pass empty string to stop."""
     ensure_session(ctx)
     return send_command('hunt', monster_name=monster_name)
 
