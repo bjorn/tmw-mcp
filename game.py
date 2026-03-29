@@ -749,10 +749,19 @@ class GameClient:
         self.map_conn.send_packet(build_whisper(target, message))
 
     def walk_to(self, x: int, y: int):
-        """Walk to a position."""
+        """Walk to a position, clamping to max ~10 tiles to avoid server rejection."""
         import time
+        import math
         px, py = self.player.x, self.player.y
-        dist = abs(x - px) + abs(y - py)
+        dx, dy = x - px, y - py
+        dist = abs(dx) + abs(dy)
+        max_dist = 10
+        if dist > max_dist and dist > 0:
+            # Scale down to max_dist tiles toward destination
+            scale = max_dist / max(abs(dx), abs(dy)) if max(abs(dx), abs(dy)) > 0 else 1
+            x = px + int(dx * scale)
+            y = py + int(dy * scale)
+            dist = abs(x - px) + abs(y - py)
         # ~150ms per tile walk speed in tmwAthena
         self._walk_arrival = time.time() + dist * 0.15
         self.map_conn.send_packet(build_walk(x, y))
