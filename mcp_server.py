@@ -283,6 +283,10 @@ def _execute_tool_command(client: GameClient, cmd: str, kw: dict) -> str:
         action = 'Accepted' if kw['accept'] else 'Rejected'
         return f'{action} party invite from #{kw["account_id"]}'
 
+    elif cmd == 'ferry_exit':
+        client._ferry_exit_at_bell = kw['bells']
+        return f'Will auto-exit ferry after {kw["bells"]} bell(s)'
+
     elif cmd == 'map':
         cmap = load_collision(client.player.map_name)
         if cmap:
@@ -347,6 +351,17 @@ def game_loop():
                 if getattr(client, '_board_target', 0):
                     client._board_target = 0
                     write_log('[Boarded! Stopped retry.]')
+
+            # Auto-exit ferry on bell
+            if etype == 'being_effect' and data.effect_type == 402:
+                ferry_exit = getattr(client, '_ferry_exit_at_bell', 0)
+                if ferry_exit > 0:
+                    client._ferry_exit_at_bell = ferry_exit - 1
+                    if ferry_exit == 1:
+                        client.walk_to(39, 29)  # Ferry exit portal
+                        msg = '[Ferry] Ship bell! AUTO-EXITING — this is our stop!'
+                    else:
+                        msg = f'[Ferry] Ship bell! Staying on — {ferry_exit - 1} more stop(s) to go.'
 
             # Push channel notification for interesting events
             if is_wakeup_event(client, etype, data):
@@ -625,6 +640,13 @@ def tmw_party_reply(ctx: Context, account_id: int, accept: bool = True) -> str:
     """Accept or reject a party invitation."""
     ensure_session(ctx)
     return send_command('party_reply', account_id=account_id, accept=accept)
+
+
+@mcp.tool()
+def tmw_ferry_exit(ctx: Context, bells: int = 1) -> str:
+    """Auto-exit the ferry after N bell rings. E.g. bells=1 exits at next stop, bells=2 skips one stop then exits."""
+    ensure_session(ctx)
+    return send_command('ferry_exit', bells=bells)
 
 
 # --- Item tools ---
