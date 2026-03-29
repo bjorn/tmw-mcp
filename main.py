@@ -308,6 +308,7 @@ def main():
         args.port = creds.get('port', args.port)
         if 'char_slot' in creds:
             args.char = creds['char_slot']
+        args.world = creds.get('world', '')
         print(f'Loaded credentials for {args.user} from {args.credentials}')
 
     if not args.user:
@@ -319,7 +320,8 @@ def main():
     client = GameClient(args.server, args.port)
 
     print(f'Connecting to {args.server}:{args.port}...')
-    if not client.full_login(args.user, args.password, args.char):
+    if not client.full_login(args.user, args.password, args.char,
+                             world=getattr(args, 'world', '')):
         print('Failed to connect. Check credentials and try again.')
         sys.exit(1)
 

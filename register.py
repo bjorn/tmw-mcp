@@ -148,7 +148,6 @@ def main():
         'username': args.user,
         'password': password,
         'gender': args.gender,
-        'account_id': result.account_id,
         'char_name': args.char_name,
         'char_slot': args.char_slot,
         'update_host': client.update_host,
