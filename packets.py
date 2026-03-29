@@ -271,6 +271,29 @@ def build_npc_close(npc_id: int) -> bytes:
     return struct.pack('<HI', 0x0146, npc_id)
 
 
+def build_npc_buy_sell(npc_id: int, buy: bool = True) -> bytes:
+    """0x00c5: Choose to buy (type=0) or sell (type=1) from shop NPC."""
+    return struct.pack('<HIB', 0x00c5, npc_id, 0 if buy else 1)
+
+
+def build_npc_buy(items: list[tuple[int, int]]) -> bytes:
+    """0x00c8: Buy items. items = [(count, name_id), ...]"""
+    length = 4 + 4 * len(items)
+    pkt = struct.pack('<HH', 0x00c8, length)
+    for count, name_id in items:
+        pkt += struct.pack('<HH', count, name_id)
+    return pkt
+
+
+def build_npc_sell(items: list[tuple[int, int]]) -> bytes:
+    """0x00c9: Sell items. items = [(index, count), ...]"""
+    length = 4 + 4 * len(items)
+    pkt = struct.pack('<HH', 0x00c9, length)
+    for index, count in items:
+        pkt += struct.pack('<HH', index, count)
+    return pkt
+
+
 def build_npc_int_input(npc_id: int, value: int) -> bytes:
     """0x0143: Submit integer input to NPC."""
     return struct.pack('<HIi', 0x0143, npc_id, value)
@@ -530,6 +553,15 @@ class InventoryRemove:
     amount: int = 0
 
 @dataclass
+class ItemUseResult:
+    """0x01c8: Item use result with remaining amount."""
+    index: int = 0
+    name_id: int = 0
+    block_id: int = 0
+    amount: int = 0
+    ok: int = 0
+
+@dataclass
 class InventoryItem:
     """Single inventory item."""
     index: int = 0
@@ -541,6 +573,38 @@ class InventoryItem:
 class InventoryList:
     """0x01ee"""
     items: list = field(default_factory=list)
+
+@dataclass
+class ShopItem:
+    """Single shop item for buy list."""
+    price: int = 0
+    name_id: int = 0
+    item_type: int = 0
+
+@dataclass
+class NpcBuySellChoice:
+    """0x00c4: NPC is a shop, choose buy or sell."""
+    npc_id: int = 0
+
+@dataclass
+class NpcBuyList:
+    """0x00c6: List of items available to buy."""
+    items: list = field(default_factory=list)
+
+@dataclass
+class NpcSellList:
+    """0x00c7: List of items that can be sold."""
+    items: list = field(default_factory=list)
+
+@dataclass
+class NpcBuyResponse:
+    """0x00ca: Buy result."""
+    fail: int = 0
+
+@dataclass
+class NpcSellResponse:
+    """0x00cb: Sell result."""
+    fail: int = 0
 
 @dataclass
 class StatUpdate1:
@@ -870,7 +934,7 @@ def parse_packet(packet_id: int, data: bytes):
         return ItemVisible(
             block_id=struct.unpack_from('<I', data, 2)[0],
             name_id=struct.unpack_from('<H', data, 6)[0],
-            amount=struct.unpack_from('<H', data, 15)[0],
+            amount=struct.unpack_from('<H', data, 13)[0],
             x=struct.unpack_from('<H', data, 9)[0],
             y=struct.unpack_from('<H', data, 11)[0],
         )
@@ -955,6 +1019,38 @@ def parse_packet(packet_id: int, data: bytes):
     elif packet_id == 0x00c0:
         return ('being_emotion', struct.unpack_from('<I', data, 2)[0], data[6])
 
+    elif packet_id == 0x00c4:
+        return NpcBuySellChoice(npc_id=struct.unpack_from('<I', data, 2)[0])
+
+    elif packet_id == 0x00c6:
+        length = struct.unpack_from('<H', data, 2)[0]
+        items = []
+        for i in range((length - 4) // 11):
+            off = 4 + i * 11
+            items.append(ShopItem(
+                price=struct.unpack_from('<I', data, off + 4)[0],
+                item_type=data[off + 8],
+                name_id=struct.unpack_from('<H', data, off + 9)[0],
+            ))
+        return NpcBuyList(items=items)
+
+    elif packet_id == 0x00c7:
+        length = struct.unpack_from('<H', data, 2)[0]
+        items = []
+        for i in range((length - 4) // 10):
+            off = 4 + i * 10
+            items.append({
+                'index': struct.unpack_from('<H', data, off)[0],
+                'price': struct.unpack_from('<I', data, off + 2)[0],
+            })
+        return NpcSellList(items=items)
+
+    elif packet_id == 0x00ca:
+        return NpcBuyResponse(fail=data[2])
+
+    elif packet_id == 0x00cb:
+        return NpcSellResponse(fail=data[2])
+
     elif packet_id == 0x0109:
         length = struct.unpack_from('<H', data, 2)[0]
         message = data[8:length].rstrip(b'\x00').decode('utf-8', errors='replace')
@@ -987,6 +1083,15 @@ def parse_packet(packet_id: int, data: bytes):
         return BeingEffect(
             block_id=struct.unpack_from('<I', data, 2)[0],
             effect_type=struct.unpack_from('<I', data, 6)[0],
+        )
+
+    elif packet_id == 0x01c8:
+        return ItemUseResult(
+            index=struct.unpack_from('<H', data, 2)[0],
+            name_id=struct.unpack_from('<H', data, 4)[0],
+            block_id=struct.unpack_from('<I', data, 6)[0],
+            amount=struct.unpack_from('<H', data, 10)[0],
+            ok=data[12],
         )
 
     elif packet_id == 0x01d7:

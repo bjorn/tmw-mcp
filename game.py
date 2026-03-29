@@ -78,6 +78,15 @@ from packets import (
     BeingStatusChange,
     PlayerStatusChange,
     BeingEffect,
+    NpcBuySellChoice,
+    NpcBuyList,
+    NpcSellList,
+    NpcBuyResponse,
+    NpcSellResponse,
+    build_npc_buy_sell,
+    build_npc_buy,
+    build_npc_sell,
+    ItemUseResult,
 )
 
 log = logging.getLogger(__name__)
@@ -382,7 +391,7 @@ class GameClient:
     # ------------------------------------------------------------------
 
     def full_login(self, username: str, password: str,
-                   char_slot: int = 0) -> bool:
+                   char_slot: int = 0, world: str = '') -> bool:
         """Perform full login: login server -> char server -> map server."""
         # Step 1: Login
         login_result = self.login(username, password)
@@ -393,8 +402,19 @@ class GameClient:
             log.error('No char servers available')
             return False
 
-        # Step 2: Char server
+        # Step 2: Choose world/server
+        for s in login_result.servers:
+            log.info('Available world: %s (%s:%d, %d users)',
+                     s.name, s.ip, s.port, s.users)
         srv = login_result.servers[0]
+        if world:
+            for s in login_result.servers:
+                if world.lower() in s.name.lower():
+                    srv = s
+                    break
+            else:
+                log.warning('World %r not found, using %s', world, srv.name)
+        log.info('Selected world: %s', srv.name)
         char_result = self.connect_char_server(srv.ip, srv.port)
         if char_result is None:
             return False
@@ -619,6 +639,14 @@ class GameClient:
                     del self.inventory[pkt.index]
             return ('inventory_remove', pkt)
 
+        elif isinstance(pkt, ItemUseResult):
+            if pkt.index in self.inventory:
+                if pkt.amount <= 0:
+                    del self.inventory[pkt.index]
+                else:
+                    self.inventory[pkt.index].amount = pkt.amount
+            return ('item_use_result', pkt)
+
         elif isinstance(pkt, NpcMessage):
             self.npc_id = pkt.npc_id or self.npc_id
             self.npc_dialog.append(pkt.message)
@@ -639,6 +667,26 @@ class GameClient:
             self.npc_choices = pkt.choices
             self.npc_waiting_choice = True
             return ('npc_choice', pkt)
+
+        elif isinstance(pkt, NpcBuySellChoice):
+            self.npc_id = pkt.npc_id
+            self.shop_buy_list = []
+            self.shop_sell_list = []
+            return ('shop_choice', pkt)
+
+        elif isinstance(pkt, NpcBuyList):
+            self.shop_buy_list = pkt.items
+            return ('shop_buy_list', pkt)
+
+        elif isinstance(pkt, NpcSellList):
+            self.shop_sell_list = pkt.items
+            return ('shop_sell_list', pkt)
+
+        elif isinstance(pkt, NpcBuyResponse):
+            return ('shop_buy_result', pkt)
+
+        elif isinstance(pkt, NpcSellResponse):
+            return ('shop_sell_result', pkt)
 
         elif isinstance(pkt, SkillDamage):
             return ('skill_damage', pkt)
@@ -702,6 +750,11 @@ class GameClient:
 
     def walk_to(self, x: int, y: int):
         """Walk to a position."""
+        import time
+        px, py = self.player.x, self.player.y
+        dist = abs(x - px) + abs(y - py)
+        # ~150ms per tile walk speed in tmwAthena
+        self._walk_arrival = time.time() + dist * 0.15
         self.map_conn.send_packet(build_walk(x, y))
 
     def attack(self, target_id: int, continuous: bool = False):
@@ -720,6 +773,22 @@ class GameClient:
     def pickup(self, item_id: int):
         """Pick up an item."""
         self.map_conn.send_packet(build_item_pickup(item_id))
+
+    def shop_buy(self, npc_id: int):
+        """Request buy list from shop NPC."""
+        self.map_conn.send_packet(build_npc_buy_sell(npc_id, buy=True))
+
+    def shop_sell(self, npc_id: int):
+        """Request sell list from shop NPC."""
+        self.map_conn.send_packet(build_npc_buy_sell(npc_id, buy=False))
+
+    def buy_items(self, items: list[tuple[int, int]]):
+        """Buy items: [(count, name_id), ...]"""
+        self.map_conn.send_packet(build_npc_buy(items))
+
+    def sell_items(self, items: list[tuple[int, int]]):
+        """Sell items: [(index, count), ...]"""
+        self.map_conn.send_packet(build_npc_sell(items))
 
     def click_npc(self, npc_id: int):
         """Click on an NPC."""

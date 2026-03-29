@@ -78,6 +78,9 @@ def push_notification(content: str):
         state.event_loop.call_soon_threadsafe(
             state.notification_queue.put_nowait, content
         )
+        log.debug('Queued notification: %s', content[:80])
+    else:
+        log.warning('Cannot push notification (no event loop/queue): %s', content[:80])
 
 
 async def notification_forwarder():
@@ -97,8 +100,9 @@ async def notification_forwarder():
                 message=JSONRPCMessage.model_validate(notif.model_dump())
             )
             await session.send_message(msg)
+            log.debug('Sent notification OK: %s', content[:80])
         except Exception as e:
-            log.warning('Failed to send channel notification: %s', e)
+            log.warning('Failed to send channel notification: %s: %s', type(e).__name__, e)
 
 
 # ---------------------------------------------------------------------------
@@ -217,6 +221,24 @@ def _execute_tool_command(client: GameClient, cmd: str, kw: dict) -> str:
             name = name.name if name else f'#{target_id}'
             return f'Following {name}'
         return f'Cannot find player: {target}'
+
+    elif cmd == 'shop_buy':
+        client.shop_buy(kw['npc_id'])
+        return f'Requesting buy list from shop #{kw["npc_id"]}'
+
+    elif cmd == 'shop_sell':
+        client.shop_sell(kw['npc_id'])
+        return f'Requesting sell list from shop #{kw["npc_id"]}'
+
+    elif cmd == 'buy':
+        items = [(kw['count'], kw['name_id'])]
+        client.buy_items(items)
+        return f'Buying {kw["count"]}x item#{kw["name_id"]}'
+
+    elif cmd == 'sell':
+        items = [(kw['index'], kw['count'])]
+        client.sell_items(items)
+        return f'Selling {kw["count"]}x from slot {kw["index"]}'
 
     elif cmd == 'equip':
         from packets import build_equip_item
@@ -425,32 +447,31 @@ def format_game_state(client: GameClient) -> str:
 # ---------------------------------------------------------------------------
 
 def ensure_session(ctx: Context):
-    """Capture the ServerSession reference from the first tool call."""
+    """Capture the ServerSession and lazily connect to the game."""
     if state.session_ref is None:
         state.session_ref = ctx.session
+    if state.client is None:
+        _connect_game()
 
 
-@asynccontextmanager
-async def lifespan(server: FastMCP):
-    """Start game client and loop on MCP startup, stop on shutdown."""
-    state.event_loop = asyncio.get_running_loop()
-    state.notification_queue = asyncio.Queue()
+def _connect_game():
+    """Connect to the game server (called lazily on first tool use)."""
+    if state.client is not None:
+        return  # Already connected
 
-    # Load credentials
     creds_path = os.path.join(CLIENT_DIR, 'credentials.json')
     with open(creds_path) as f:
         creds = json.load(f)
 
     log.info('Logging in as %s...', creds['username'])
 
-    # Clear log file
     with open(LOG_FILE, 'w') as f:
         f.write('')
 
-    # Login (blocking, but OK during startup)
     client = GameClient(creds['server'], creds['port'])
     if not client.full_login(creds['username'], creds['password'],
-                             creds.get('char_slot', 0)):
+                             creds.get('char_slot', 0),
+                             world=creds.get('world', '')):
         raise RuntimeError('Game login failed!')
 
     state.client = client
@@ -464,13 +485,22 @@ async def lifespan(server: FastMCP):
     state.game_thread.start()
 
     # Start notification forwarder
-    forward_task = asyncio.create_task(notification_forwarder())
+    state._forward_task = asyncio.create_task(notification_forwarder())
+
+
+@asynccontextmanager
+async def lifespan(server: FastMCP):
+    """Lightweight lifespan — game login happens lazily on first tool call."""
+    state.event_loop = asyncio.get_running_loop()
+    state.notification_queue = asyncio.Queue()
+    log.info('MCP server ready (game connects on first tool call)')
 
     try:
         yield state
     finally:
         state.running = False
-        forward_task.cancel()
+        if hasattr(state, '_forward_task'):
+            state._forward_task.cancel()
         if state.game_thread:
             state.game_thread.join(timeout=3.0)
         if state.client:
@@ -588,6 +618,34 @@ def tmw_pickup(ctx: Context, item_id: int) -> str:
 
 
 @mcp.tool()
+def tmw_shop_buy(ctx: Context, npc_id: int) -> str:
+    """Open a shop NPC's buy list. Use after clicking a shop NPC (0x00c4 event). The buy list will appear in game state."""
+    ensure_session(ctx)
+    return send_command('shop_buy', npc_id=npc_id)
+
+
+@mcp.tool()
+def tmw_shop_sell(ctx: Context, npc_id: int) -> str:
+    """Open a shop NPC's sell list. Use after clicking a shop NPC (0x00c4 event)."""
+    ensure_session(ctx)
+    return send_command('shop_sell', npc_id=npc_id)
+
+
+@mcp.tool()
+def tmw_buy(ctx: Context, name_id: int, count: int = 1) -> str:
+    """Buy items from shop. Must open buy list first with tmw_shop_buy."""
+    ensure_session(ctx)
+    return send_command('buy', name_id=name_id, count=count)
+
+
+@mcp.tool()
+def tmw_sell(ctx: Context, index: int, count: int = 1) -> str:
+    """Sell items to shop. Must open sell list first with tmw_shop_sell."""
+    ensure_session(ctx)
+    return send_command('sell', index=index, count=count)
+
+
+@mcp.tool()
 def tmw_equip(ctx: Context, index: int) -> str:
     """Equip an item by inventory index."""
     ensure_session(ctx)
@@ -671,6 +729,15 @@ if __name__ == '__main__':
     import anyio
     from mcp.server.stdio import stdio_server
 
+    # Also log to a file so we can diagnose startup failures
+    # (stderr may not be visible when launched by Claude Code)
+    _fh = logging.FileHandler(os.path.join(CLIENT_DIR, 'mcp_startup.log'), mode='w')
+    _fh.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(name)s: %(message)s',
+                                       datefmt='%H:%M:%S'))
+    logging.getLogger().addHandler(_fh)
+
+    log.info('MCP server process starting (pid=%d, cwd=%s)', os.getpid(), os.getcwd())
+
     async def run_stdio_with_channel():
         async with stdio_server() as (read_stream, write_stream):
             init_options = mcp._mcp_server.create_initialization_options(
@@ -678,4 +745,8 @@ if __name__ == '__main__':
             )
             await mcp._mcp_server.run(read_stream, write_stream, init_options)
 
-    anyio.run(run_stdio_with_channel)
+    try:
+        anyio.run(run_stdio_with_channel)
+    except Exception:
+        log.exception('MCP server crashed')
+        raise

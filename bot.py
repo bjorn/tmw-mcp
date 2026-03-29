@@ -361,6 +361,23 @@ def format_event(client: GameClient, etype: str, data) -> str | None:
         return '[NPC done - send "close"]'
     elif etype == 'npc_choice':
         return f'[NPC choices: {", ".join(f"{i+1}={c}" for i, c in enumerate(data.choices))}]'
+    elif etype == 'shop_choice':
+        return f'[Shop NPC #{data.npc_id} - use tmw_shop_buy or tmw_shop_sell]'
+    elif etype == 'shop_buy_list':
+        from items import item_name
+        lines = ['[Shop Buy List]']
+        for item in data.items:
+            lines.append(f'  {item_name(item.name_id)} (#{item.name_id}) - {item.price} GP')
+        return '\n'.join(lines)
+    elif etype == 'shop_sell_list':
+        lines = ['[Shop Sell List]']
+        for item in data.items:
+            lines.append(f'  slot {item["index"]} - {item["price"]} GP')
+        return '\n'.join(lines)
+    elif etype == 'shop_buy_result':
+        return f'[Shop] Buy {"succeeded" if data.fail == 0 else "FAILED"}'
+    elif etype == 'shop_sell_result':
+        return f'[Shop] Sell {"succeeded" if data.fail == 0 else "FAILED"}'
     elif etype == 'map_change':
         return f'[Warped to {data.map_name} ({data.x},{data.y})]'
     elif etype == 'action' and data.damage > 0:
@@ -375,6 +392,8 @@ def format_event(client: GameClient, etype: str, data) -> str | None:
 WAKEUP_EVENTS = {
     'chat', 'whisper', 'gm_chat',
     'npc_message', 'npc_next', 'npc_close', 'npc_choice',
+    'shop_choice', 'shop_buy_list', 'shop_sell_list',
+    'shop_buy_result', 'shop_sell_result',
     'map_change', 'map_server_change',
 }
 
@@ -393,16 +412,21 @@ def is_wakeup_event(client: GameClient, etype: str, data) -> bool:
 def run_auto_behaviors(client: GameClient, tick_count: int):
     """Run automated behaviors: auto-attack, hunt, follow, board."""
     # Auto-attack: chase target into melee range and keep attacking
+    import time
     auto_target = getattr(client, '_auto_attack_target', 0)
-    if auto_target and tick_count % 10 == 0:
+    walk_arrival = getattr(client, '_walk_arrival', 0)
+    if auto_target and tick_count % 4 == 0:
         if auto_target in client.beings:
             target = client.beings[auto_target]
             px, py = client.player.x, client.player.y
             dx = abs(target.x - px)
             dy = abs(target.y - py)
-            if dx > 2 or dy > 2:
+            now = time.time()
+            if dx > 1 or dy > 1:
+                # Need to walk closer first
                 client.walk_to(target.x, target.y)
-            else:
+            elif now >= walk_arrival:
+                # We've arrived — attack!
                 client.attack(auto_target, continuous=True)
         else:
             client._auto_attack_target = 0
@@ -410,7 +434,7 @@ def run_auto_behaviors(client: GameClient, tick_count: int):
 
     # Hunt mode: find nearest monster of target type and attack it
     hunt_type = getattr(client, '_hunt_type', '')
-    if hunt_type and not auto_target and tick_count % 8 == 0:
+    if hunt_type and not auto_target and tick_count % 4 == 0:
         px, py = client.player.x, client.player.y
         best = None
         best_dist = 999
@@ -422,12 +446,9 @@ def run_auto_behaviors(client: GameClient, tick_count: int):
                     best_dist = dist
         if best:
             client._auto_attack_target = best.block_id
-            if best_dist > 2:
-                client.walk_to(best.x, best.y)
-            else:
-                client.attack(best.block_id, continuous=True)
+            client.walk_to(best.x, best.y)
         elif client.floor_items:
-            for item in client.nearby_items(radius=3):
+            for item in client.nearby_items(radius=5):
                 client.walk_to(item.x, item.y)
                 client.pickup(item.block_id)
                 break
@@ -482,7 +503,8 @@ def main():
 
     client = GameClient(creds['server'], creds['port'])
     if not client.full_login(creds['username'], creds['password'],
-                             creds.get('char_slot', 0)):
+                             creds.get('char_slot', 0),
+                             world=creds.get('world', '')):
         write_log('Login failed!', to_stderr=True)
         sys.exit(1)
 
