@@ -386,6 +386,8 @@ def format_event(client: GameClient, etype: str, data) -> str | None:
             return f'[Hit] took {data.damage} damage'
     elif etype == 'being_remove' and data.reason == 1:
         return f'[Died] #{data.block_id}'
+    elif etype == 'being_effect' and data.effect_type == 402:
+        return '[Ferry] Ship bell! Ferry has docked - exit now if this is your stop!'
     return None
 
 
@@ -406,6 +408,8 @@ def is_wakeup_event(client: GameClient, etype: str, data) -> bool:
     if etype == 'action' and data.damage > 0 and data.dst_id == client.account_id:
         return True
     if etype == 'being_remove' and data.reason == 1 and data.block_id == client.account_id:
+        return True
+    if etype == 'being_effect' and data.effect_type == 402:
         return True
     return False
 
