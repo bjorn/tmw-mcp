@@ -287,6 +287,10 @@ def _execute_tool_command(client: GameClient, cmd: str, kw: dict) -> str:
         client._ferry_exit_at_bell = kw['bells']
         return f'Will auto-exit ferry after {kw["bells"]} bell(s)'
 
+    elif cmd == 'attack_range':
+        client._attack_range = kw['range']
+        return f'Attack range set to {kw["range"]}'
+
     elif cmd == 'map':
         cmap = load_collision(client.player.map_name)
         if cmap:
@@ -640,6 +644,13 @@ def tmw_party_reply(ctx: Context, account_id: int, accept: bool = True) -> str:
     """Accept or reject a party invitation."""
     ensure_session(ctx)
     return send_command('party_reply', account_id=account_id, accept=accept)
+
+
+@mcp.tool()
+def tmw_attack_range(ctx: Context, range: int = 1) -> str:
+    """Set weapon attack range (1=melee, 2=scythe/polearm, etc). Affects how close the bot walks to targets."""
+    ensure_session(ctx)
+    return send_command('attack_range', range=range)
 
 
 @mcp.tool()

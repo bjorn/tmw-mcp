@@ -424,6 +424,7 @@ def run_auto_behaviors(client: GameClient, tick_count: int):
     import time
     auto_target = getattr(client, '_auto_attack_target', 0)
     walk_arrival = getattr(client, '_walk_arrival', 0)
+    attack_range = getattr(client, '_attack_range', 1)
     if auto_target and tick_count % 4 == 0:
         if auto_target in client.beings:
             target = client.beings[auto_target]
@@ -431,11 +432,15 @@ def run_auto_behaviors(client: GameClient, tick_count: int):
             dx = abs(target.x - px)
             dy = abs(target.y - py)
             now = time.time()
-            if dx > 1 or dy > 1:
-                # Need to walk closer first
-                client.walk_to(target.x, target.y)
+            if dx > attack_range or dy > attack_range:
+                # Walk toward target but stop at attack range
+                sx = max(-1, min(1, target.x - px))
+                sy = max(-1, min(1, target.y - py))
+                dest_x = target.x - sx * (attack_range - 1)
+                dest_y = target.y - sy * (attack_range - 1)
+                client.walk_to(dest_x, dest_y)
             elif now >= walk_arrival:
-                # We've arrived — attack!
+                # In range — attack!
                 client.attack(auto_target, continuous=True)
         else:
             client._auto_attack_target = 0
