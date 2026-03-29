@@ -648,7 +648,7 @@ def tmw_party_reply(ctx: Context, account_id: int, accept: bool = True) -> str:
 
 @mcp.tool()
 def tmw_attack_range(ctx: Context, range: int = 1) -> str:
-    """Set weapon attack range (1=melee, 2=scythe/polearm, etc). Affects how close the bot walks to targets."""
+    """Override weapon attack range (normally auto-detected from server). 1=melee, 2=scythe/polearm."""
     ensure_session(ctx)
     return send_command('attack_range', range=range)
 

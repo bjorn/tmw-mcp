@@ -709,6 +709,12 @@ class BeingEffect:
 
 
 @dataclass
+class AttackRange:
+    """0x013a: Server notifies player's current attack range."""
+    attack_range: int = 1
+
+
+@dataclass
 class PartyInvited:
     """0x00fe: You're invited to join a party."""
     account_id: int = 0
@@ -1095,6 +1101,11 @@ def parse_packet(packet_id: int, data: bytes):
         return BeingEffect(
             block_id=struct.unpack_from('<I', data, 2)[0],
             effect_type=struct.unpack_from('<I', data, 6)[0],
+        )
+
+    elif packet_id == 0x013a:
+        return AttackRange(
+            attack_range=struct.unpack_from('<H', data, 2)[0],
         )
 
     elif packet_id == 0x00fe:

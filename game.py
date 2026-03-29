@@ -78,6 +78,7 @@ from packets import (
     BeingStatusChange,
     PlayerStatusChange,
     BeingEffect,
+    AttackRange,
     PartyInvited,
     build_party_reply,
     NpcBuySellChoice,
@@ -704,6 +705,10 @@ class GameClient:
 
         elif isinstance(pkt, BeingEffect):
             return ('being_effect', pkt)
+
+        elif isinstance(pkt, AttackRange):
+            self._attack_range = pkt.attack_range
+            return ('attack_range', pkt)
 
         elif isinstance(pkt, PartyInvited):
             return ('party_invited', pkt)
