@@ -641,9 +641,13 @@ class GameClient:
 
         elif isinstance(pkt, InventoryAdd):
             if pkt.pickup_fail == 0:
-                self.inventory[pkt.index] = InventoryItem(
-                    index=pkt.index, name_id=pkt.name_id,
-                    item_type=pkt.item_type, amount=pkt.amount)
+                if pkt.index in self.inventory:
+                    # Server sends delta for stacking items
+                    self.inventory[pkt.index].amount += pkt.amount
+                else:
+                    self.inventory[pkt.index] = InventoryItem(
+                        index=pkt.index, name_id=pkt.name_id,
+                        item_type=pkt.item_type, amount=pkt.amount)
             return ('inventory_add', pkt)
 
         elif isinstance(pkt, InventoryRemove):
