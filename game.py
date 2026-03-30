@@ -263,6 +263,10 @@ class GameClient:
         self._path_callback = None  # callable(success: bool, x: int, y: int)
         self._walk_arrival: float = 0.0
 
+        # Pickup queue — processed one at a time
+        self._pickup_queue: list[tuple] = []
+        self._pickup_active: bool = False
+
     # ------------------------------------------------------------------
     # Login flow
     # ------------------------------------------------------------------
@@ -876,6 +880,45 @@ class GameClient:
     def pickup(self, item_id: int):
         """Pick up an item."""
         self.map_conn.send_packet(build_item_pickup(item_id))
+
+    def queue_pickup(self, item_id: int, callback=None):
+        """Queue an item for pickup — walks to it and picks it up.
+        Multiple calls are processed sequentially. Calls callback(item_id) when done."""
+        item = None
+        for it in self.floor_items.values():
+            if it.block_id == item_id:
+                item = it
+                break
+        if item is None:
+            if callback:
+                callback(item_id)
+            return
+        self._pickup_queue.append((item_id, item.x, item.y, callback))
+        if not self._pickup_active:
+            self._process_next_pickup()
+
+    def _process_next_pickup(self):
+        """Walk to and pick up the next item in the queue."""
+        if not self._pickup_queue:
+            self._pickup_active = False
+            return
+        self._pickup_active = True
+        item_id, ix, iy, cb = self._pickup_queue.pop(0)
+        px, py = self.player.x, self.player.y
+        dx, dy = abs(ix - px), abs(iy - py)
+        if dx > 1 or dy > 1:
+            def on_arrive(success, x, y, iid=item_id, icb=cb):
+                if success:
+                    self.pickup(iid)
+                if icb:
+                    icb(iid)
+                self._process_next_pickup()
+            self.walk_path(ix, iy, callback=on_arrive)
+        else:
+            self.pickup(item_id)
+            if cb:
+                cb(item_id)
+            self._process_next_pickup()
 
     def shop_buy(self, npc_id: int):
         """Request buy list from shop NPC."""

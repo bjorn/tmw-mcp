@@ -176,21 +176,7 @@ def _execute_tool_command(client: GameClient, cmd: str, kw: dict) -> str:
 
     elif cmd == 'pickup':
         item_id = kw['item_id']
-        # Auto-walk to item if not adjacent, then pick up on arrival
-        need_walk = False
-        for item in client.floor_items.values():
-            if item.block_id == item_id:
-                px, py = client.player.x, client.player.y
-                dx, dy = abs(item.x - px), abs(item.y - py)
-                if dx > 1 or dy > 1:
-                    def on_arrive(success, x, y, iid=item_id):
-                        if success:
-                            client.pickup(iid)
-                    client.walk_path(item.x, item.y, callback=on_arrive)
-                    need_walk = True
-                break
-        if not need_walk:
-            client.pickup(item_id)
+        client.queue_pickup(item_id)
         return f'Picking up #{item_id}'
 
     elif cmd == 'npc':
