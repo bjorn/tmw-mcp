@@ -907,8 +907,12 @@ class GameClient:
         item_id, ix, iy, cb = self._pickup_queue.pop(0)
         px, py = self.player.x, self.player.y
         dx, dy = abs(ix - px), abs(iy - py)
+        log = logging.getLogger('pickup')
+        log.info('Processing pickup #%d at (%d,%d), player at (%d,%d), dist=(%d,%d)',
+                 item_id, ix, iy, px, py, dx, dy)
         if dx > 1 or dy > 1:
             def on_arrive(success, x, y, iid=item_id, icb=cb):
+                log.info('Walk to item #%d: success=%s, now at (%d,%d)', iid, success, x, y)
                 if success:
                     self.pickup(iid)
                 if icb:
@@ -916,6 +920,7 @@ class GameClient:
                 self._process_next_pickup()
             self.walk_path(ix, iy, callback=on_arrive)
         else:
+            log.info('Adjacent pickup #%d', item_id)
             self.pickup(item_id)
             if cb:
                 cb(item_id)
