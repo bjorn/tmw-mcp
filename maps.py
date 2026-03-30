@@ -5,6 +5,8 @@ Reads TMX (Tiled) map files from the client-data repository and extracts
 the collision layer to determine walkable tiles.
 """
 
+import heapq
+import math
 import os
 import xml.etree.ElementTree as ET
 
@@ -58,6 +60,67 @@ class CollisionMap:
                     row.append('.')
             lines.append(''.join(row))
         return '\n'.join(lines)
+
+
+    def find_path(self, sx: int, sy: int, gx: int, gy: int,
+                  max_nodes: int = 50000) -> list[tuple[int, int]] | None:
+        """A* pathfinding from (sx,sy) to (gx,gy). Returns list of (x,y) or None."""
+        if not self.is_walkable(gx, gy) or not self.is_walkable(sx, sy):
+            return None
+        if sx == gx and sy == gy:
+            return [(sx, sy)]
+
+        SQRT2 = math.sqrt(2)
+        # Chebyshev-style heuristic for 8-dir movement
+        def h(x, y):
+            dx, dy = abs(x - gx), abs(y - gy)
+            return max(dx, dy) + (SQRT2 - 1) * min(dx, dy)
+
+        # (f, counter, x, y)
+        counter = 0
+        open_heap = [(h(sx, sy), counter, sx, sy)]
+        g_score = {(sx, sy): 0.0}
+        came_from = {}
+        visited = 0
+
+        DIRS = [(-1,0),(1,0),(0,-1),(0,1),(-1,-1),(-1,1),(1,-1),(1,1)]
+
+        while open_heap:
+            f, _, cx, cy = heapq.heappop(open_heap)
+            if cx == gx and cy == gy:
+                # Reconstruct path
+                path = [(gx, gy)]
+                while (cx, cy) in came_from:
+                    cx, cy = came_from[(cx, cy)]
+                    path.append((cx, cy))
+                path.reverse()
+                return path
+
+            cur_g = g_score.get((cx, cy))
+            if cur_g is None or f - h(cx, cy) > cur_g + 1e-6:
+                continue  # stale entry
+
+            visited += 1
+            if visited > max_nodes:
+                return None
+
+            for ddx, ddy in DIRS:
+                nx, ny = cx + ddx, cy + ddy
+                if not self.is_walkable(nx, ny):
+                    continue
+                # Prevent corner-cutting for diagonals
+                if ddx != 0 and ddy != 0:
+                    if not self.is_walkable(cx + ddx, cy) or not self.is_walkable(cx, cy + ddy):
+                        continue
+                cost = SQRT2 if (ddx != 0 and ddy != 0) else 1.0
+                ng = cur_g + cost
+                if ng < g_score.get((nx, ny), float('inf')):
+                    g_score[(nx, ny)] = ng
+                    counter += 1
+                    heapq.heappush(open_heap, (ng + h(nx, ny), counter, nx, ny))
+                    came_from[(nx, ny)] = (cx, cy)
+
+        return None
 
 
 # Cache of loaded collision maps

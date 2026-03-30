@@ -257,6 +257,12 @@ class GameClient:
         self.last_ping = 0.0
         self.tick = 0
 
+        # Path-walking state
+        self._path_queue: list[tuple[int, int]] = []
+        self._path_goal: tuple[int, int] | None = None
+        self._path_callback = None  # callable(success: bool, x: int, y: int)
+        self._walk_arrival: float = 0.0
+
     # ------------------------------------------------------------------
     # Login flow
     # ------------------------------------------------------------------
@@ -579,6 +585,7 @@ class GameClient:
             self.player.y = pkt.y
             self.beings.clear()
             self.floor_items.clear()
+            self._cancel_path()
             self.map_conn.send_packet(build_map_loaded())
             return ('map_change', pkt)
 
@@ -759,22 +766,99 @@ class GameClient:
         self.map_conn.send_packet(build_whisper(target, message))
 
     def walk_to(self, x: int, y: int):
-        """Walk to a position, clamping to max ~10 tiles to avoid server rejection."""
-        import time
+        """Walk to a position, clamping to max ~10 tiles to avoid server rejection.
+        Cancels any in-progress path walk."""
+        self._cancel_path()
+        self._walk_step(x, y)
+
+    def _walk_step(self, x: int, y: int):
+        """Send a single walk packet, clamping to max ~10 tiles."""
         import math
         px, py = self.player.x, self.player.y
         dx, dy = x - px, y - py
         dist = abs(dx) + abs(dy)
         max_dist = 10
         if dist > max_dist and dist > 0:
-            # Scale down to max_dist tiles toward destination
             scale = max_dist / max(abs(dx), abs(dy)) if max(abs(dx), abs(dy)) > 0 else 1
             x = px + int(dx * scale)
             y = py + int(dy * scale)
             dist = abs(x - px) + abs(y - py)
-        # ~150ms per tile walk speed in tmwAthena
         self._walk_arrival = time.time() + dist * 0.15
         self.map_conn.send_packet(build_walk(x, y))
+
+    def walk_path(self, x: int, y: int, callback=None):
+        """Walk to (x,y) using A* pathfinding. Calls callback(success, x, y) on completion."""
+        from maps import load_collision
+        self._cancel_path()
+        self._path_goal = (x, y)
+        self._path_callback = callback
+
+        cmap = load_collision(self.player.map_name)
+        if cmap is None:
+            # No collision data — fall back to direct walk
+            self._walk_step(x, y)
+            self._path_queue = []
+            return
+
+        path = cmap.find_path(self.player.x, self.player.y, x, y)
+        if path is None:
+            self._path_goal = None
+            if callback:
+                callback(False, x, y)
+            return
+
+        if len(path) <= 1:
+            # Already there
+            if callback:
+                callback(True, x, y)
+            return
+
+        # Break path into waypoints spaced ~10 tiles apart
+        waypoints = []
+        i = 10
+        while i < len(path):
+            waypoints.append(path[i])
+            i += 10
+        # Always include final destination
+        if not waypoints or waypoints[-1] != path[-1]:
+            waypoints.append(path[-1])
+
+        self._path_queue = waypoints
+        # Send first step
+        first = self._path_queue.pop(0)
+        self._walk_step(first[0], first[1])
+
+    def _advance_path(self):
+        """Called from game loop to send next path segment when current walk completes."""
+        if self._path_goal is None:
+            return
+        if time.time() < self._walk_arrival:
+            return  # still walking
+
+        if self._path_queue:
+            # Check we're roughly on track (within 3 tiles of expected position)
+            wp = self._path_queue[0]
+            px, py = self.player.x, self.player.y
+            # Send next segment
+            nxt = self._path_queue.pop(0)
+            self._walk_step(nxt[0], nxt[1])
+        else:
+            # Path complete
+            goal = self._path_goal
+            cb = self._path_callback
+            self._path_goal = None
+            self._path_callback = None
+            if cb:
+                cb(True, goal[0], goal[1])
+
+    def _cancel_path(self):
+        """Cancel any in-progress path walk."""
+        if self._path_goal is not None:
+            goal = self._path_goal
+            cb = self._path_callback
+            self._path_queue.clear()
+            self._path_goal = None
+            self._path_callback = None
 
     def attack(self, target_id: int, continuous: bool = False):
         """Attack a target."""

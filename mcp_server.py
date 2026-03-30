@@ -150,8 +150,13 @@ def _execute_tool_command(client: GameClient, cmd: str, kw: dict) -> str:
         return f'Whispered to {kw["target"]}: {kw["message"]}'
 
     elif cmd == 'walk':
-        client.walk_to(kw['x'], kw['y'])
-        return f'Walking to ({kw["x"]},{kw["y"]})'
+        def on_walk_done(success, x, y):
+            if success:
+                push_notification(f'[Walk] Arrived at ({x},{y})')
+            else:
+                push_notification(f'[Walk] No path to ({x},{y})')
+        client.walk_path(kw['x'], kw['y'], callback=on_walk_done)
+        return f'Pathfinding walk to ({kw["x"]},{kw["y"]})'
 
     elif cmd == 'attack':
         target_id = kw['target_id']
@@ -394,6 +399,9 @@ def game_loop():
         # Automated behaviors
         run_auto_behaviors(client, tick_count)
 
+        # Advance pathfinding walk
+        client._advance_path()
+
         # Process MCP tool commands
         drain_command_queue(client)
 
@@ -592,7 +600,7 @@ def tmw_whisper(ctx: Context, target: str, message: str) -> str:
 
 @mcp.tool()
 def tmw_walk(ctx: Context, x: int, y: int) -> str:
-    """Walk to coordinates (x, y)."""
+    """Walk to coordinates (x, y) using A* pathfinding. Sends a channel notification on arrival or failure."""
     ensure_session(ctx)
     return send_command('walk', x=x, y=y)
 
