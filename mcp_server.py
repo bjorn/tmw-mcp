@@ -191,6 +191,7 @@ def _execute_tool_command(client: GameClient, cmd: str, kw: dict) -> str:
         from packets import build_npc_close
         npc_id = kw.get('npc_id') or client.npc_id
         client.map_conn.send_packet(build_npc_close(npc_id))
+        client.npc_dialog_open = False
         client.npc_waiting_close = False
         client.npc_waiting_next = False
         client.npc_waiting_choice = False
@@ -455,6 +456,8 @@ def format_game_state(client: GameClient) -> str:
         lines.append(f'  [{item.block_id}] {item_name(item.name_id)} x{item.amount} at ({item.x},{item.y})')
     lines.append('')
     lines.append('npc_dialog:')
+    if client.npc_dialog_open and not client.npc_dialog and not client.npc_waiting_next and not client.npc_waiting_close and not client.npc_waiting_choice:
+        lines.append('  [WARNING: NPC dialog lock active but no dialog received — send close to unlock]')
     if client.npc_dialog:
         for msg in client.npc_dialog:
             lines.append(f'  {msg}')
@@ -466,21 +469,6 @@ def format_game_state(client: GameClient) -> str:
         for i, c in enumerate(client.npc_choices, 1):
             lines.append(f'  [{i}] {c}')
         lines.append('  [waiting: choose N]')
-    lines.append('')
-    lines.append('recent_chat:')
-    for msg in client.chat_log[-10:]:
-        lines.append(f'  {msg}')
-    for sender, msg in client.whisper_log[-5:]:
-        lines.append(f'  [whisper from {sender}] {msg}')
-
-    cmap = load_collision(p.map_name)
-    if cmap:
-        lines.append('')
-        lines.append('minimap (radius 8, @=you #=wall .=path M=monster N=NPC $=item):')
-        view = cmap.render_around(p.x, p.y, 14,
-                                  beings=client.beings, items=client.floor_items)
-        for row in view.split('\n'):
-            lines.append(f'  {row}')
 
     return '\n'.join(lines)
 
@@ -567,7 +555,7 @@ mcp = FastMCP(
 
 @mcp.tool()
 def tmw_state(ctx: Context) -> str:
-    """Get current game state: character info, position, HP/SP, nearby beings, inventory, NPC dialog, minimap."""
+    """Get current game state: character info, position, HP/SP, nearby beings, inventory, NPC dialog."""
     ensure_session(ctx)
     client = state.client
     if not client:

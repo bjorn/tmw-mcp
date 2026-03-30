@@ -22,11 +22,12 @@ import time
 
 from game import GameClient
 
-LOG_FILE = 'bot_log.txt'
-STATE_FILE = 'bot_state.txt'
-CMD_FILE = 'cmd.txt'
-CHAT_LOG = 'chat_history.log'
-NPC_LOG = 'npc_history.log'
+_DIR = os.path.dirname(os.path.abspath(__file__))
+LOG_FILE = os.path.join(_DIR, 'bot_log.txt')
+STATE_FILE = os.path.join(_DIR, 'bot_state.txt')
+CMD_FILE = os.path.join(_DIR, 'cmd.txt')
+CHAT_LOG = os.path.join(_DIR, 'chat_history.log')
+NPC_LOG = os.path.join(_DIR, 'npc_history.log')
 
 log = logging.getLogger('bot')
 

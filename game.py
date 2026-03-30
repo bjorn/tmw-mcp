@@ -243,6 +243,7 @@ class GameClient:
 
         # NPC dialog state
         self.npc_id: int = 0
+        self.npc_dialog_open: bool = False  # True while server-side NPC lock may be active
         self.npc_dialog: list[str] = []
         self.npc_choices: list[str] = []
         self.npc_waiting_next: bool = False
@@ -948,6 +949,7 @@ class GameClient:
 
     def click_npc(self, npc_id: int):
         """Click on an NPC."""
+        self.npc_dialog_open = True
         self.npc_dialog.clear()
         self.npc_choices.clear()
         self.npc_waiting_next = False
