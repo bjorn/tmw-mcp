@@ -378,7 +378,10 @@ def game_loop():
                 notif_msg = msg
                 # Enrich combat notifications with HP info
                 if etype == 'action' and data.damage > 0:
-                    notif_msg = f'[Combat] Took {data.damage} damage (HP: {client.player.hp}/{client.player.max_hp})'
+                    src = client.beings.get(data.src_id)
+                    src_name = src.name if src and src.name else f'#{data.src_id}'
+                    crit = ' CRIT' if data.damage_type == 0x0a else ''
+                    notif_msg = f'[Combat] {src_name} hit you for {data.damage}{crit} (HP: {client.player.hp}/{client.player.max_hp})'
                 elif etype == 'being_remove' and data.reason == 1 and data.block_id == client.account_id:
                     if not death_notified:
                         notif_msg = '[Death] You died!'
