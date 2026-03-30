@@ -466,10 +466,21 @@ def run_auto_behaviors(client: GameClient, tick_count: int):
         if best:
             client._auto_attack_target = best.block_id
             client.walk_to(best.x, best.y)
-        elif client.floor_items:
-            for item in client.nearby_items(radius=5):
-                client.queue_pickup(item.block_id)
-                break
+        else:
+            # Pick up nearby items first
+            picked = False
+            if client.floor_items:
+                for item in client.nearby_items(radius=5):
+                    client.queue_pickup(item.block_id)
+                    picked = True
+                    break
+            # Roam to find more monsters (every ~3 seconds = tick_count % 12)
+            if not picked and tick_count % 12 == 0:
+                import random
+                roam_radius = 8
+                rx = px + random.randint(-roam_radius, roam_radius)
+                ry = py + random.randint(-roam_radius, roam_radius)
+                client.walk_to(rx, ry)
 
     # Board: keep trying to click a dock NPC until we warp
     board_target = getattr(client, '_board_target', 0)
