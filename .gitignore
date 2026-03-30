@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+credentials.json
+chat_history.log
+npc_history.log
+mcp_startup.log
