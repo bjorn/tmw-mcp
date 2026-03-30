@@ -858,11 +858,12 @@ class GameClient:
     def _cancel_path(self):
         """Cancel any in-progress path walk."""
         if self._path_goal is not None:
-            goal = self._path_goal
-            cb = self._path_callback
             self._path_queue.clear()
             self._path_goal = None
             self._path_callback = None
+            # Reset pickup queue if a pickup walk was cancelled
+            self._pickup_queue.clear()
+            self._pickup_active = False
 
     def attack(self, target_id: int, continuous: bool = False):
         """Attack a target."""

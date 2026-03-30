@@ -420,6 +420,9 @@ def is_wakeup_event(client: GameClient, etype: str, data) -> bool:
 
 def run_auto_behaviors(client: GameClient, tick_count: int):
     """Run automated behaviors: auto-attack, hunt, follow, board."""
+    # Yield to pickup queue — don't walk/attack while picking up items
+    if getattr(client, '_pickup_active', False):
+        return
     # Auto-attack: chase target into melee range and keep attacking
     import time
     auto_target = getattr(client, '_auto_attack_target', 0)
@@ -464,8 +467,7 @@ def run_auto_behaviors(client: GameClient, tick_count: int):
             client.walk_to(best.x, best.y)
         elif client.floor_items:
             for item in client.nearby_items(radius=5):
-                client.walk_to(item.x, item.y)
-                client.pickup(item.block_id)
+                client.queue_pickup(item.block_id)
                 break
 
     # Board: keep trying to click a dock NPC until we warp
