@@ -449,16 +449,30 @@ def run_auto_behaviors(client: GameClient, tick_count: int):
         else:
             client._auto_attack_target = 0
             write_log(f'[Auto-attack target #{auto_target} gone]')
+            # Auto-pickup nearby items after kill
+            if getattr(client, '_hunt_type', ''):
+                for item in client.nearby_items(radius=1):
+                    client.pickup(item.block_id)
+                    break
 
     # Hunt mode: find nearest monster of target type(s) and attack it
     hunt_type = getattr(client, '_hunt_type', '')
     if hunt_type and not auto_target and tick_count % 4 == 0:
+        # Set hunt home position on first tick
+        if not getattr(client, '_hunt_home', None):
+            client._hunt_home = (client.player.x, client.player.y)
+        hx, hy = client._hunt_home
         hunt_names = [n.strip().lower() for n in hunt_type.split(',')]
         px, py = client.player.x, client.player.y
         best = None
         best_dist = 999
+        hunt_leash = 20  # max distance from home to chase monsters
         for b in client.beings.values():
             if b.name.lower() in hunt_names and b.max_hp > 0:
+                # Only chase monsters within leash range of home
+                home_dist = abs(b.x - hx) + abs(b.y - hy)
+                if home_dist > hunt_leash:
+                    continue
                 dist = abs(b.x - px) + abs(b.y - py)
                 if dist < best_dist:
                     best = b
@@ -475,11 +489,12 @@ def run_auto_behaviors(client: GameClient, tick_count: int):
                     picked = True
                     break
             # Roam to find more monsters (every ~3 seconds = tick_count % 12)
+            # Roam relative to HOME position, not current position
             if not picked and tick_count % 12 == 0:
                 import random
                 roam_radius = 8
-                rx = px + random.randint(-roam_radius, roam_radius)
-                ry = py + random.randint(-roam_radius, roam_radius)
+                rx = hx + random.randint(-roam_radius, roam_radius)
+                ry = hy + random.randint(-roam_radius, roam_radius)
                 client.walk_to(rx, ry)
 
     # Board: keep trying to click a dock NPC until we warp

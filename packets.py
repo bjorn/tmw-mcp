@@ -245,6 +245,10 @@ def build_equip_item(index: int, epos: int = 0) -> bytes:
     """0x00a9: Equip an item from inventory. index is ioff2 (inventory offset)."""
     return struct.pack('<HHH', 0x00a9, index, epos)
 
+def build_unequip_item(index: int) -> bytes:
+    """0x00ab: Unequip an item. index is ioff2 (inventory offset)."""
+    return struct.pack('<HH', 0x00ab, index)
+
 
 def build_drop_item(index: int, amount: int) -> bytes:
     """0x00a2: Drop an item."""
@@ -552,6 +556,13 @@ class InventoryAdd:
     pickup_fail: int = 0
 
 @dataclass
+class EquipResult:
+    """0x00aa (equip) / 0x00ac (unequip) response."""
+    index: int = 0
+    equip_point: int = 0
+    success: int = 0
+
+@dataclass
 class InventoryRemove:
     """0x00af"""
     index: int = 0
@@ -573,6 +584,8 @@ class InventoryItem:
     name_id: int = 0
     item_type: int = 0
     amount: int = 0
+    equip_point: int = 0   # where it CAN be equipped (bitmask)
+    equipped: int = 0      # where it IS equipped (0 = not equipped)
 
 @dataclass
 class InventoryList:
@@ -975,6 +988,22 @@ def parse_packet(packet_id: int, data: bytes):
             pickup_fail=data[22],
         )
 
+    elif packet_id == 0x00aa:
+        # Equip result: index(2) + equip_point(2) + success(1)
+        return EquipResult(
+            index=struct.unpack_from('<H', data, 2)[0],
+            equip_point=struct.unpack_from('<H', data, 4)[0],
+            success=data[6],
+        )
+
+    elif packet_id == 0x00ac:
+        # Unequip result: index(2) + equip_point(2) + success(1)
+        return EquipResult(
+            index=struct.unpack_from('<H', data, 2)[0],
+            equip_point=struct.unpack_from('<H', data, 4)[0],
+            success=data[6],
+        )
+
     elif packet_id == 0x00af:
         return InventoryRemove(
             index=struct.unpack_from('<H', data, 2)[0],
@@ -1142,6 +1171,7 @@ def parse_packet(packet_id: int, data: bytes):
 
     elif packet_id == 0x00a4:
         # Equipment list: head=4, repeat_size=20
+        # Per item: index(2) name_id(2) type(1) identified(1) equip_point(2) equipped(2) broken(1) refine(1) card0-3(8)
         length = struct.unpack_from('<H', data, 2)[0]
         result = InventoryList()
         n_items = (length - 4) // 20
@@ -1152,6 +1182,8 @@ def parse_packet(packet_id: int, data: bytes):
                 name_id=struct.unpack_from('<H', data, off + 2)[0],
                 item_type=data[off + 4],
                 amount=1,
+                equip_point=struct.unpack_from('<H', data, off + 6)[0],
+                equipped=struct.unpack_from('<H', data, off + 8)[0],
             )
             result.items.append(item)
         return result

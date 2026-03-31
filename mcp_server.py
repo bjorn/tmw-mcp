@@ -167,12 +167,18 @@ def _execute_tool_command(client: GameClient, cmd: str, kw: dict) -> str:
     elif cmd == 'stopattack':
         client._auto_attack_target = 0
         client._hunt_type = ''
+        client._hunt_home = None
         return 'Stopped auto-attack and hunting'
 
     elif cmd == 'hunt':
         name = kw.get('monster_name', '')
         client._hunt_type = name
-        return f'Hunting: {name}' if name else 'Stopped hunting'
+        if name:
+            client._hunt_home = (client.player.x, client.player.y)
+            return f'Hunting: {name} (home: {client.player.x},{client.player.y})'
+        else:
+            client._hunt_home = None
+            return 'Stopped hunting'
 
     elif cmd == 'pickup':
         item_id = kw['item_id']
@@ -249,9 +255,15 @@ def _execute_tool_command(client: GameClient, cmd: str, kw: dict) -> str:
         return f'Selling {kw["count"]}x from slot {kw["index"]}'
 
     elif cmd == 'equip':
-        from packets import build_equip_item
-        client.map_conn.send_packet(build_equip_item(kw['index']))
-        return f'Equipping item at index {kw["index"]}'
+        from packets import build_equip_item, build_unequip_item
+        index = kw['index']
+        item = client.inventory.get(index)
+        if item and item.equipped:
+            client.map_conn.send_packet(build_unequip_item(index))
+            return f'Unequipping item at index {index}'
+        else:
+            client.map_conn.send_packet(build_equip_item(index))
+            return f'Equipping item at index {index}'
 
     elif cmd == 'use':
         import struct
@@ -293,6 +305,18 @@ def _execute_tool_command(client: GameClient, cmd: str, kw: dict) -> str:
     elif cmd == 'ferry_exit':
         client._ferry_exit_at_bell = kw['bells']
         return f'Will auto-exit ferry after {kw["bells"]} bell(s)'
+
+    elif cmd == 'drop':
+        from packets import build_drop_item
+        index = kw['index']
+        amount = kw.get('amount', 0)
+        item = client.inventory.get(index)
+        if not item:
+            return f'No item at index {index}'
+        drop_amount = amount if amount > 0 else item.amount
+        client.map_conn.send_packet(build_drop_item(index, drop_amount))
+        name = item_name(item.name_id)
+        return f'Dropping {drop_amount}x {name} from slot [{index}]'
 
     elif cmd == 'attack_range':
         client._attack_range = kw['range']
@@ -359,6 +383,7 @@ def game_loop():
                 write_npc_log(npc_name, data.message)
             elif etype == 'map_change':
                 death_notified = False
+                push_notification(f'[Warped to {client.player.map_name} ({client.player.x},{client.player.y})]')
                 if getattr(client, '_board_target', 0):
                     client._board_target = 0
                     write_log('[Boarded! Stopped retry.]')
@@ -373,6 +398,11 @@ def game_loop():
                         msg = '[Ferry] Ship bell! AUTO-EXITING — this is our stop!'
                     else:
                         msg = f'[Ferry] Ship bell! Staying on — {ferry_exit - 1} more stop(s) to go.'
+
+            # Notify on item pickup
+            if etype == 'inventory_add' and data.pickup_fail == 0:
+                name = item_name(data.name_id)
+                push_notification(f'[Pickup] Got {name} x{data.amount}')
 
             # Push channel notification for interesting events
             if is_wakeup_event(client, etype, data):
@@ -446,11 +476,6 @@ def format_game_state(client: GameClient) -> str:
         hp_str = f' HP:{b.hp}/{b.max_hp}' if b.max_hp > 0 else ''
         lines.append(f'  [{b.block_id}] {name} at ({b.x},{b.y}){hp_str}')
     lines.append('')
-    lines.append('inventory:')
-    for idx in sorted(client.inventory.keys()):
-        item = client.inventory[idx]
-        lines.append(f'  [{idx}] {item_name(item.name_id)} x{item.amount}')
-    lines.append('')
     lines.append('floor_items:')
     for item in client.nearby_items(radius=15):
         lines.append(f'  [{item.block_id}] {item_name(item.name_id)} x{item.amount} at ({item.x},{item.y})')
@@ -469,7 +494,6 @@ def format_game_state(client: GameClient) -> str:
         for i, c in enumerate(client.npc_choices, 1):
             lines.append(f'  [{i}] {c}')
         lines.append('  [waiting: choose N]')
-
     return '\n'.join(lines)
 
 
@@ -555,12 +579,27 @@ mcp = FastMCP(
 
 @mcp.tool()
 def tmw_state(ctx: Context) -> str:
-    """Get current game state: character info, position, HP/SP, nearby beings, inventory, NPC dialog."""
+    """Get current game state: character info, position, HP/SP, nearby beings, floor items."""
     ensure_session(ctx)
     client = state.client
     if not client:
         return 'Game not connected'
     return format_game_state(client)
+
+
+@mcp.tool()
+def tmw_inventory(ctx: Context) -> str:
+    """List inventory items."""
+    ensure_session(ctx)
+    client = state.client
+    if not client:
+        return 'Game not connected'
+    lines = []
+    for idx in sorted(client.inventory.keys()):
+        item = client.inventory[idx]
+        equipped = ' [EQUIPPED]' if item.equipped else ''
+        lines.append(f'  [{idx}] {item_name(item.name_id)} x{item.amount}{equipped}')
+    return '\n'.join(lines) if lines else '(empty)'
 
 
 # --- Chat tools ---
@@ -709,6 +748,13 @@ def tmw_use(ctx: Context, index: int) -> str:
     """Use an item by inventory index."""
     ensure_session(ctx)
     return send_command('use', index=index)
+
+
+@mcp.tool()
+def tmw_drop(ctx: Context, index: int, amount: int = 0) -> str:
+    """Drop an item on the ground. Amount 0 = drop entire stack."""
+    ensure_session(ctx)
+    return send_command('drop', index=index, amount=amount)
 
 
 # --- NPC tools ---

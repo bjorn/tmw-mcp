@@ -67,6 +67,7 @@ from packets import (
     InventoryRemove,
     InventoryList,
     InventoryItem,
+    EquipResult,
     StatUpdate1,
     StatUpdate5,
     NpcMessage,
@@ -537,10 +538,14 @@ class GameClient:
             return ('being_remove', pkt)
 
         elif isinstance(pkt, WalkResponse):
+            # Don't update position to destination immediately!
+            # The server walks tile-by-tile; we'd desync if we jump to dest.
+            # Instead, update to the walk SOURCE (where server confirms we are NOW)
+            # and store destination for path advancement.
             old_x, old_y = self.player.x, self.player.y
-            self.player.x = pkt.x1
-            self.player.y = pkt.y1
-            # Log if the walk source doesn't match our tracked position
+            self.player.x = pkt.x0
+            self.player.y = pkt.y0
+            self._walk_dest = (pkt.x1, pkt.y1)
             if abs(pkt.x0 - old_x) > 1 or abs(pkt.y0 - old_y) > 1:
                 log.warning('Walk source mismatch! Server says from (%d,%d) but we thought (%d,%d) -> dest (%d,%d)',
                             pkt.x0, pkt.y0, old_x, old_y, pkt.x1, pkt.y1)
@@ -657,6 +662,17 @@ class GameClient:
                 if self.inventory[pkt.index].amount <= 0:
                     del self.inventory[pkt.index]
             return ('inventory_remove', pkt)
+
+        elif isinstance(pkt, EquipResult):
+            if pkt.success and pkt.index in self.inventory:
+                item = self.inventory[pkt.index]
+                if item.equipped:
+                    # Was equipped, now unequipped
+                    item.equipped = 0
+                else:
+                    # Was unequipped, now equipped
+                    item.equipped = pkt.equip_point
+            return ('equip_result', pkt)
 
         elif isinstance(pkt, ItemUseResult):
             if pkt.index in self.inventory:
@@ -844,6 +860,12 @@ class GameClient:
         if time.time() < self._walk_arrival:
             return  # still walking
 
+        # Walk timer expired — update position to walk destination
+        dest = getattr(self, '_walk_dest', None)
+        if dest:
+            self.player.x, self.player.y = dest
+            self._walk_dest = None
+
         if self._path_queue:
             # Check we're roughly on track (within 3 tiles of expected position)
             wp = self._path_queue[0]
@@ -866,8 +888,7 @@ class GameClient:
             self._path_queue.clear()
             self._path_goal = None
             self._path_callback = None
-            # Reset pickup queue if a pickup walk was cancelled
-            self._pickup_queue.clear()
+            # Don't clear pickup queue — let it retry on next process cycle
             self._pickup_active = False
 
     def attack(self, target_id: int, continuous: bool = False):
@@ -904,11 +925,14 @@ class GameClient:
             self._process_next_pickup()
 
     def _process_next_pickup(self):
-        """Walk to and pick up the next item in the queue."""
+        """Walk to and pick up the nearest item in the queue."""
         if not self._pickup_queue:
             self._pickup_active = False
             return
         self._pickup_active = True
+        # Pick nearest item from queue
+        px, py = self.player.x, self.player.y
+        self._pickup_queue.sort(key=lambda t: abs(t[1] - px) + abs(t[2] - py))
         item_id, ix, iy, cb = self._pickup_queue.pop(0)
         px, py = self.player.x, self.player.y
         dx, dy = abs(ix - px), abs(iy - py)
