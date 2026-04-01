@@ -231,6 +231,9 @@ def _execute_tool_command(client: GameClient, cmd: str, kw: dict) -> str:
                     break
         if target_id:
             client._follow_target = target_id
+            # Stop hunting to avoid conflict with follow
+            client._hunt_type = ''
+            client._hunt_home = None
             name = client.beings.get(target_id)
             name = name.name if name else f'#{target_id}'
             return f'Following {name}'
@@ -370,6 +373,9 @@ def game_loop():
         f'{client.player.map_name} ({client.player.x},{client.player.y})'
     )
 
+    last_exp = [0]  # mutable for closure; tracks EXP for kill notifications
+    last_beings = {}  # block_id -> being data, for kill name lookups
+
     while state.running:
         try:
             events = client.process_packets(timeout=0.2)
@@ -380,6 +386,7 @@ def game_loop():
             break
 
         for event in events:
+          try:
             etype, data = event[0], event[1]
 
             # Log to file
@@ -421,12 +428,29 @@ def game_loop():
                 name = item_name(data.name_id)
                 push_notification(f'[Pickup] Got {name} x{data.amount}')
 
+            # Snapshot all currently visible beings for kill tracking
+            # Must happen before being_remove check since game.py already popped the being
+            for bid, b in client.beings.items():
+                if b.max_hp > 0:
+                    last_beings[bid] = b
+
+            # Track kills: when a monster is removed due to death
+            if etype == 'being_remove' and data.block_id != client.account_id:
+                killed = last_beings.pop(data.block_id, None)
+                if data.reason == 1 and killed is not None:
+                    xp_now = client.player.base_exp
+                    xp_gained = max(0, xp_now - last_exp[0]) if last_exp[0] > 0 else 0
+                    last_exp[0] = xp_now
+                    xp_str = f' (+{xp_gained} EXP)' if xp_gained > 0 else ''
+                    kill_name = getattr(killed, 'name', '') or monster_name(getattr(killed, 'species', 0)) or f'#{data.block_id}'
+                    push_notification(f'[Kill] {kill_name}{xp_str}')
+
             # Push channel notification for interesting events
             if is_wakeup_event(client, etype, data):
                 notif_msg = msg
                 # Enrich combat notifications with HP info
                 if etype == 'action' and data.damage > 0:
-                    src = client.beings.get(data.src_id)
+                    src = client.beings.get(data.src_id) or last_beings.get(data.src_id)
                     src_name = src.name if src and src.name else f'#{data.src_id}'
                     crit = ' CRIT' if data.damage_type == 0x0a else ''
                     notif_msg = f'[Combat] {src_name} hit you for {data.damage}{crit} (HP: {client.player.hp}/{client.player.max_hp})'
@@ -438,6 +462,9 @@ def game_loop():
                         notif_msg = None
                 if notif_msg:
                     push_notification(notif_msg)
+          except Exception as e:
+            log.error('Event handler error: %s', e, exc_info=True)
+            write_log(f'[ERROR] Event handler: {e}')
 
         # Automated behaviors
         run_auto_behaviors(client, tick_count)
