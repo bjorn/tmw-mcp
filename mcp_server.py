@@ -318,6 +318,23 @@ def _execute_tool_command(client: GameClient, cmd: str, kw: dict) -> str:
         name = item_name(item.name_id)
         return f'Dropping {drop_amount}x {name} from slot [{index}]'
 
+    elif cmd == 'online_list':
+        client.online_list = []
+        client.request_online_list()
+        # Poll for response — must process packets ourselves since we're on the game thread
+        import time
+        for _ in range(50):
+            client.process_packets(timeout=0.1)
+            if client.online_list:
+                break
+        if not client.online_list:
+            return 'No response from server (timeout)'
+        lines = []
+        for p in client.online_list:
+            gm = ' [GM]' if p.gm_level else ''
+            lines.append(f'  {p.name} (lv{p.level}){gm}')
+        return f'{len(client.online_list)} players online:\n' + '\n'.join(lines)
+
     elif cmd == 'attack_range':
         client._attack_range = kw['range']
         return f'Attack range set to {kw["range"]}'
@@ -383,7 +400,7 @@ def game_loop():
                 write_npc_log(npc_name, data.message)
             elif etype == 'map_change':
                 death_notified = False
-                push_notification(f'[Warped to {client.player.map_name} ({client.player.x},{client.player.y})]')
+                # Warp notification is sent by is_wakeup_event below
                 if getattr(client, '_board_target', 0):
                     client._board_target = 0
                     write_log('[Boarded! Stopped retry.]')
@@ -600,6 +617,13 @@ def tmw_inventory(ctx: Context) -> str:
         equipped = ' [EQUIPPED]' if item.equipped else ''
         lines.append(f'  [{idx}] {item_name(item.name_id)} x{item.amount}{equipped}')
     return '\n'.join(lines) if lines else '(empty)'
+
+
+@mcp.tool()
+def tmw_online(ctx: Context) -> str:
+    """Get list of all players currently online."""
+    ensure_session(ctx)
+    return send_command('online_list')
 
 
 # --- Chat tools ---

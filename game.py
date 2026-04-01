@@ -91,6 +91,8 @@ from packets import (
     build_npc_buy,
     build_npc_sell,
     ItemUseResult,
+    OnlineList,
+    build_online_list_request,
 )
 
 log = logging.getLogger(__name__)
@@ -254,6 +256,7 @@ class GameClient:
         # Chat log
         self.chat_log: list[str] = []
         self.whisper_log: list[tuple[str, str]] = []
+        self.online_list: list = []
 
         # Timing
         self.last_ping = 0.0
@@ -682,6 +685,10 @@ class GameClient:
                     self.inventory[pkt.index].amount = pkt.amount
             return ('item_use_result', pkt)
 
+        elif isinstance(pkt, OnlineList):
+            self.online_list = pkt.players
+            return ('online_list', pkt)
+
         elif isinstance(pkt, NpcMessage):
             self.npc_id = pkt.npc_id or self.npc_id
             self.npc_dialog.append(pkt.message)
@@ -789,6 +796,10 @@ class GameClient:
     def whisper(self, target: str, message: str):
         """Send a private message."""
         self.map_conn.send_packet(build_whisper(target, message))
+
+    def request_online_list(self):
+        """Request the list of online players from the server."""
+        self.map_conn.send_packet(build_online_list_request())
 
     def walk_to(self, x: int, y: int):
         """Walk to a position, clamping to max ~10 tiles to avoid server rejection.

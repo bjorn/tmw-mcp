@@ -490,12 +490,19 @@ def run_auto_behaviors(client: GameClient, tick_count: int):
                     break
             # Roam to find more monsters (every ~3 seconds = tick_count % 12)
             # Roam relative to HOME position, not current position
+            # Avoid warp tiles to prevent accidentally leaving the map
             if not picked and tick_count % 12 == 0:
                 import random
+                from maps import load_collision
                 roam_radius = 8
-                rx = hx + random.randint(-roam_radius, roam_radius)
-                ry = hy + random.randint(-roam_radius, roam_radius)
-                client.walk_to(rx, ry)
+                cmap = load_collision(client.player.map_name)
+                for _ in range(10):  # retry up to 10 times to find a safe tile
+                    rx = hx + random.randint(-roam_radius, roam_radius)
+                    ry = hy + random.randint(-roam_radius, roam_radius)
+                    if cmap and cmap.is_warp(rx, ry):
+                        continue
+                    client.walk_to(rx, ry)
+                    break
 
     # Board: keep trying to click a dock NPC until we warp
     board_target = getattr(client, '_board_target', 0)

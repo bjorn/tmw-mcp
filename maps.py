@@ -17,16 +17,26 @@ MAPS_PATH = os.path.join(CLIENT_DATA_PATH, 'maps')
 class CollisionMap:
     """Parsed collision data for a single map."""
 
-    def __init__(self, name: str, width: int, height: int, data: list[list[bool]]):
+    def __init__(self, name: str, width: int, height: int, data: list[list[bool]],
+                 warps: list[tuple[int, int, int, int]] | None = None):
         self.name = name
         self.width = width
         self.height = height
         # data[y][x] = True means walkable
         self.data = data
+        # warps: list of (tile_x, tile_y, tile_w, tile_h) rectangles
+        self.warps = warps or []
 
     def is_walkable(self, x: int, y: int) -> bool:
         if 0 <= x < self.width and 0 <= y < self.height:
             return self.data[y][x]
+        return False
+
+    def is_warp(self, x: int, y: int) -> bool:
+        """Check if tile (x, y) is inside a warp zone."""
+        for wx, wy, ww, wh in self.warps:
+            if wx <= x < wx + ww and wy <= y < wy + wh:
+                return True
         return False
 
     def render_around(self, px: int, py: int, radius: int = 10,
@@ -174,6 +184,21 @@ def load_collision(map_name: str) -> CollisionMap | None:
     if collision_data is None:
         return None
 
-    cmap = CollisionMap(map_name, map_width, map_height, collision_data)
+    # Parse warp zones from object layers
+    tile_w = int(root.get('tilewidth', 32))
+    tile_h = int(root.get('tileheight', 32))
+    warps = []
+    for objgroup in root.findall('objectgroup'):
+        for obj in objgroup.findall('object'):
+            if obj.get('type', '').lower() == 'warp':
+                px = int(float(obj.get('x', 0)))
+                py = int(float(obj.get('y', 0)))
+                pw = int(float(obj.get('width', tile_w)))
+                ph = int(float(obj.get('height', tile_h)))
+                # Convert pixel coords to tile coords
+                warps.append((px // tile_w, py // tile_h,
+                              max(1, pw // tile_w), max(1, ph // tile_h)))
+
+    cmap = CollisionMap(map_name, map_width, map_height, collision_data, warps)
     _cache[map_name] = cmap
     return cmap

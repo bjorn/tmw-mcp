@@ -326,6 +326,11 @@ def build_party_reply(account_id: int, accept: bool) -> bytes:
     return struct.pack('<HIi', 0x00ff, account_id, 1 if accept else 0)
 
 
+def build_online_list_request() -> bytes:
+    """0x0210: Request the online player list."""
+    return struct.pack('<H', 0x0210)
+
+
 # ---------------------------------------------------------------------------
 # Packet parsers (server -> client)
 # ---------------------------------------------------------------------------
@@ -732,6 +737,22 @@ class PartyInvited:
     """0x00fe: You're invited to join a party."""
     account_id: int = 0
     party_name: str = ''
+
+
+@dataclass
+class OnlineListEntry:
+    """One entry from the 0x0211 online list."""
+    account_id: int = 0
+    name: str = ''
+    level: int = 0
+    gm_level: int = 0
+    gender: int = 0
+
+
+@dataclass
+class OnlineList:
+    """0x0211: Full online player list."""
+    players: list = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -1210,6 +1231,24 @@ def parse_packet(packet_id: int, data: bytes):
         length = struct.unpack_from('<H', data, 2)[0]
         message = data[5:length].rstrip(b'\x00').decode('utf-8', errors='replace')
         return NpcMessage(npc_id=0, message=message)
+
+    elif packet_id == 0x0211:
+        # Online list: head=4, repeat_size=31
+        # repeat: account_id(u32) + char_name(24) + level(u8) + gm_level(u8) + gender(u8)
+        length = struct.unpack_from('<H', data, 2)[0]
+        result = OnlineList()
+        n_entries = (length - 4) // 31
+        for i in range(n_entries):
+            off = 4 + i * 31
+            entry = OnlineListEntry(
+                account_id=struct.unpack_from('<I', data, off)[0],
+                name=decode_str(data[off + 4:off + 28]),
+                level=data[off + 28],
+                gm_level=data[off + 29],
+                gender=data[off + 30],
+            )
+            result.players.append(entry)
+        return result
 
     elif packet_id == 0x8000:
         # Special hold/transaction packet - just acknowledge
