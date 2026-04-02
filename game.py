@@ -81,7 +81,11 @@ from packets import (
     BeingEffect,
     AttackRange,
     PartyInvited,
+    build_party_message,
+    build_party_leave,
     build_party_reply,
+    PartyInfo,
+    PartyMessage,
     NpcBuySellChoice,
     NpcBuyList,
     NpcSellList,
@@ -257,6 +261,8 @@ class GameClient:
         self.chat_log: list[str] = []
         self.whisper_log: list[tuple[str, str]] = []
         self.online_list: list = []
+        # Party members: account_id -> name
+        self.party_members: dict[int, str] = {}
 
         # Timing
         self.last_ping = 0.0
@@ -573,6 +579,18 @@ class GameClient:
             if len(self.chat_log) > 200:
                 self.chat_log = self.chat_log[-100:]
             return ('chat', pkt)
+
+        elif isinstance(pkt, PartyInfo):
+            self.party_members.clear()
+            for aid, name, map_name, leader, online in (pkt.members or []):
+                self.party_members[aid] = name
+            return ('party_info', pkt)
+
+        elif isinstance(pkt, PartyMessage):
+            self.chat_log.append(f'[party] {pkt.message}')
+            if len(self.chat_log) > 200:
+                self.chat_log = self.chat_log[-100:]
+            return ('party_chat', pkt)
 
         elif isinstance(pkt, WhisperMessage):
             self.whisper_log.append((pkt.sender, pkt.message))
@@ -1029,6 +1047,14 @@ class GameClient:
     def party_reply(self, account_id: int, accept: bool):
         """Accept or reject a party invitation."""
         self.map_conn.send_packet(build_party_reply(account_id, accept))
+
+    def party_message(self, message: str):
+        """Send a message to party members."""
+        self.map_conn.send_packet(build_party_message(message))
+
+    def party_leave(self):
+        """Leave the current party."""
+        self.map_conn.send_packet(build_party_leave())
 
     def respawn(self):
         """Respawn after death."""

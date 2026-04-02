@@ -149,6 +149,17 @@ def _execute_tool_command(client: GameClient, cmd: str, kw: dict) -> str:
         client.whisper(kw['target'], kw['message'])
         return f'Whispered to {kw["target"]}: {kw["message"]}'
 
+    elif cmd == 'party_message':
+        msg = kw['message']
+        if not is_safe_message(msg):
+            return 'BLOCKED: message contained credentials!'
+        client.party_message(msg)
+        return f'Party: {msg}'
+
+    elif cmd == 'party_leave':
+        client.party_leave()
+        return 'Left party'
+
     elif cmd == 'walk':
         def on_walk_done(success, x, y):
             if success:
@@ -397,6 +408,8 @@ def game_loop():
             # Persistent chat/NPC logs
             if etype == 'chat':
                 write_chat_log(data.message)
+            elif etype == 'party_chat':
+                write_chat_log(msg or f'[party] {data.message}')
             elif etype == 'whisper':
                 write_chat_log(f'[whisper from {data.sender}] {data.message}')
             elif etype == 'gm_chat':
@@ -667,6 +680,20 @@ def tmw_whisper(ctx: Context, target: str, message: str) -> str:
     """Send a private message to a player."""
     ensure_session(ctx)
     return send_command('whisper', target=target, message=message)
+
+
+@mcp.tool()
+def tmw_party_chat(ctx: Context, message: str) -> str:
+    """Send a message to party members."""
+    ensure_session(ctx)
+    return send_command('party_message', message=message)
+
+
+@mcp.tool()
+def tmw_party_leave(ctx: Context) -> str:
+    """Leave the current party."""
+    ensure_session(ctx)
+    return send_command('party_leave')
 
 
 # --- Movement tools ---

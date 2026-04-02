@@ -326,6 +326,11 @@ def build_party_reply(account_id: int, accept: bool) -> bytes:
     return struct.pack('<HIi', 0x00ff, account_id, 1 if accept else 0)
 
 
+def build_party_leave() -> bytes:
+    """0x0100: Leave the current party."""
+    return struct.pack('<H', 0x0100)
+
+
 def build_online_list_request() -> bytes:
     """0x0210: Request the online player list."""
     return struct.pack('<H', 0x0210)
@@ -493,6 +498,18 @@ class BeingAction:
 class ChatMessage:
     """0x008d / 0x008e"""
     block_id: int = 0  # 0 if from self (0x008e)
+    message: str = ''
+
+@dataclass
+class PartyInfo:
+    """0x00fb: Party member list."""
+    party_name: str = ''
+    members: list = None  # list of (account_id, name, map_name, is_leader, is_online)
+
+@dataclass
+class PartyMessage:
+    """0x0109: Incoming party chat message."""
+    account_id: int = 0
     message: str = ''
 
 @dataclass
@@ -1121,8 +1138,9 @@ def parse_packet(packet_id: int, data: bytes):
 
     elif packet_id == 0x0109:
         length = struct.unpack_from('<H', data, 2)[0]
+        account_id = struct.unpack_from('<I', data, 4)[0]
         message = data[8:length].rstrip(b'\x00').decode('utf-8', errors='replace')
-        return ChatMessage(block_id=struct.unpack_from('<I', data, 4)[0], message=message)
+        return PartyMessage(account_id=account_id, message=message)
 
     elif packet_id == 0x0119:
         return PlayerStatusChange(
@@ -1163,6 +1181,21 @@ def parse_packet(packet_id: int, data: bytes):
             account_id=struct.unpack_from('<I', data, 2)[0],
             party_name=data[6:30].rstrip(b'\x00').decode('latin-1'),
         )
+
+    elif packet_id == 0x00fb:
+        length = struct.unpack_from('<H', data, 2)[0]
+        party_name = data[4:28].rstrip(b'\x00').decode('utf-8', errors='replace')
+        members = []
+        offset = 28
+        while offset + 46 <= length:
+            aid = struct.unpack_from('<I', data, offset)[0]
+            name = data[offset+4:offset+28].rstrip(b'\x00').decode('utf-8', errors='replace')
+            map_name = data[offset+28:offset+44].rstrip(b'\x00').decode('utf-8', errors='replace')
+            leader = data[offset+44] == 0
+            online = data[offset+45] == 0
+            members.append((aid, name, map_name, leader, online))
+            offset += 46
+        return PartyInfo(party_name=party_name, members=members)
 
     elif packet_id == 0x01c8:
         return ItemUseResult(

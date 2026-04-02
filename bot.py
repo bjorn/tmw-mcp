@@ -351,6 +351,11 @@ def format_event(client: GameClient, etype: str, data) -> str | None:
     """Format a game event as a human-readable string. Returns None for silent events."""
     if etype == 'chat':
         return f'[Chat] {data.message}'
+    elif etype == 'party_chat':
+        sender = client.party_members.get(data.account_id)
+        if sender:
+            return f'[Party] {sender} : {data.message}'
+        return f'[Party] {data.message}'
     elif etype == 'whisper':
         return f'[Whisper from {data.sender}] {data.message}'
     elif etype == 'gm_chat':
@@ -396,7 +401,7 @@ def format_event(client: GameClient, etype: str, data) -> str | None:
 
 # Events that should push a channel notification to wake Claude
 WAKEUP_EVENTS = {
-    'chat', 'whisper', 'gm_chat',
+    'chat', 'whisper', 'gm_chat', 'party_chat',
     'npc_message', 'npc_next', 'npc_close', 'npc_choice',
     'shop_choice', 'shop_buy_list', 'shop_sell_list',
     'shop_buy_result', 'shop_sell_result',
