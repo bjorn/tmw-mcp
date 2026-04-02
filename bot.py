@@ -422,7 +422,7 @@ def is_wakeup_event(client: GameClient, etype: str, data) -> bool:
 def run_auto_behaviors(client: GameClient, tick_count: int):
     """Run automated behaviors: auto-attack, hunt, follow, board."""
     # Yield to pickup queue — don't walk/attack while picking up items
-    if getattr(client, '_pickup_active', False):
+    if getattr(client, '_pickup_active', False) or getattr(client, '_pickup_queue', []):
         return
     # Auto-attack: chase target into melee range and keep attacking
     import time
@@ -451,8 +451,8 @@ def run_auto_behaviors(client: GameClient, tick_count: int):
             write_log(f'[Auto-attack target #{auto_target} gone]')
             # Auto-pickup nearby items after kill
             if getattr(client, '_hunt_type', ''):
-                for item in client.nearby_items(radius=1):
-                    client.pickup(item.block_id)
+                for item in client.nearby_items(radius=5):
+                    client.queue_pickup(item.block_id)
                     break
 
     # Hunt mode: find nearest monster of target type(s) and attack it

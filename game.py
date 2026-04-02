@@ -549,6 +549,7 @@ class GameClient:
             self.player.x = pkt.x0
             self.player.y = pkt.y0
             self._walk_dest = (pkt.x1, pkt.y1)
+            self._walk_response_received = True
             if abs(pkt.x0 - old_x) > 1 or abs(pkt.y0 - old_y) > 1:
                 log.warning('Walk source mismatch! Server says from (%d,%d) but we thought (%d,%d) -> dest (%d,%d)',
                             pkt.x0, pkt.y0, old_x, old_y, pkt.x1, pkt.y1)
@@ -820,6 +821,7 @@ class GameClient:
             y = py + int(dy * scale)
             dist = abs(x - px) + abs(y - py)
         self._walk_arrival = time.time() + dist * 0.15
+        self._walk_response_received = False
         self.map_conn.send_packet(build_walk(x, y))
 
     def walk_path(self, x: int, y: int, callback=None):
@@ -870,6 +872,8 @@ class GameClient:
             return
         if time.time() < self._walk_arrival:
             return  # still walking
+        if not getattr(self, '_walk_response_received', True):
+            return  # waiting for server to confirm walk
 
         # Walk timer expired — update position to walk destination
         dest = getattr(self, '_walk_dest', None)
@@ -878,9 +882,6 @@ class GameClient:
             self._walk_dest = None
 
         if self._path_queue:
-            # Check we're roughly on track (within 3 tiles of expected position)
-            wp = self._path_queue[0]
-            px, py = self.player.x, self.player.y
             # Send next segment
             nxt = self._path_queue.pop(0)
             self._walk_step(nxt[0], nxt[1])
@@ -930,6 +931,9 @@ class GameClient:
         if item is None:
             if callback:
                 callback(item_id)
+            return
+        # Avoid duplicates in queue
+        if any(t[0] == item_id for t in self._pickup_queue):
             return
         self._pickup_queue.append((item_id, item.x, item.y, callback))
         if not self._pickup_active:
