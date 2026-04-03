@@ -642,6 +642,7 @@ class GameClient:
             self.player.y = pkt.y
             self.beings.clear()
             self.floor_items.clear()
+            self._cancel_path()
             self.map_conn.close()
             self.connect_map_server(pkt.ip, pkt.port)
             return ('map_server_change', pkt)
@@ -935,7 +936,9 @@ class GameClient:
                 cb(True, goal[0], goal[1])
 
     def _cancel_path(self):
-        """Cancel any in-progress path walk."""
+        """Cancel any in-progress path walk and clear walk state."""
+        self._walk_dest = None
+        self._walk_arrival = 0.0
         if self._path_goal is not None:
             self._path_queue.clear()
             self._path_goal = None
