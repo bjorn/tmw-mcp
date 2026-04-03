@@ -834,10 +834,17 @@ class GameClient:
         """Request the list of online players from the server."""
         self.map_conn.send_packet(build_online_list_request())
 
+    def _snap_walk_position(self):
+        """If a previous walk should have completed, snap player position to its destination."""
+        if self._walk_dest and time.time() >= self._walk_arrival:
+            self.player.x, self.player.y = self._walk_dest
+            self._walk_dest = None
+
     def walk_to(self, x: int, y: int):
         """Walk to a position, clamping to max ~10 tiles to avoid server rejection.
         Cancels any in-progress path walk."""
         self._cancel_path()
+        self._snap_walk_position()
         self._walk_step(x, y)
 
     def _walk_step(self, x: int, y: int):
@@ -909,14 +916,10 @@ class GameClient:
             return
         if time.time() < self._walk_arrival:
             return  # still walking
-        if not getattr(self, '_walk_response_received', True):
+        if not self._walk_response_received:
             return  # waiting for server to confirm walk
 
-        # Walk timer expired — update position to walk destination
-        dest = getattr(self, '_walk_dest', None)
-        if dest:
-            self.player.x, self.player.y = dest
-            self._walk_dest = None
+        self._snap_walk_position()
 
         if self._path_queue:
             # Send next segment

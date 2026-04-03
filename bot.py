@@ -427,13 +427,15 @@ def is_wakeup_event(client: GameClient, etype: str, data) -> bool:
 def run_auto_behaviors(client: GameClient, tick_count: int):
     """Run automated behaviors: auto-attack, hunt, follow, board."""
     # Yield to pickup queue — don't walk/attack while picking up items
-    if getattr(client, '_pickup_active', False) or getattr(client, '_pickup_queue', []):
+    if client._pickup_active or client._pickup_queue:
         return
+    # Snap position so distance checks below use up-to-date coordinates
+    client._snap_walk_position()
     # Auto-attack: chase target into melee range and keep attacking
     import time
-    auto_target = getattr(client, '_auto_attack_target', 0)
-    walk_arrival = getattr(client, '_walk_arrival', 0)
-    attack_range = getattr(client, '_attack_range', 1)
+    auto_target = client._auto_attack_target
+    walk_arrival = client._walk_arrival
+    attack_range = client._attack_range
     if auto_target and tick_count % 4 == 0:
         if auto_target in client.beings:
             target = client.beings[auto_target]
@@ -455,16 +457,16 @@ def run_auto_behaviors(client: GameClient, tick_count: int):
             client._auto_attack_target = 0
             write_log(f'[Auto-attack target #{auto_target} gone]')
             # Auto-pickup nearby items after kill
-            if getattr(client, '_hunt_type', ''):
+            if client._hunt_type:
                 for item in client.nearby_items(radius=5):
                     client.queue_pickup(item.block_id)
                     break
 
     # Hunt mode: find nearest monster of target type(s) and attack it
-    hunt_type = getattr(client, '_hunt_type', '')
+    hunt_type = client._hunt_type
     if hunt_type and not auto_target and tick_count % 4 == 0:
         # Set hunt home position on first tick
-        if not getattr(client, '_hunt_home', None):
+        if not client._hunt_home:
             client._hunt_home = (client.player.x, client.player.y)
         hx, hy = client._hunt_home
         hunt_names = [n.strip().lower() for n in hunt_type.split(',')]
@@ -510,14 +512,14 @@ def run_auto_behaviors(client: GameClient, tick_count: int):
                     break
 
     # Board: keep trying to click a dock NPC until we warp
-    board_target = getattr(client, '_board_target', 0)
+    board_target = client._board_target
     if board_target and tick_count % 15 == 0:
         from packets import build_npc_close, build_npc_click
         client.map_conn.send_packet(build_npc_close(board_target))
         client.map_conn.send_packet(build_npc_click(board_target))
 
     # Follow: stay within 3 tiles of target player
-    follow_target = getattr(client, '_follow_target', 0)
+    follow_target = client._follow_target
     if follow_target and tick_count % 8 == 0:
         if follow_target in client.beings:
             target = client.beings[follow_target]

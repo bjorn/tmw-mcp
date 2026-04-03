@@ -15,6 +15,11 @@ from packets import PACKET_SIZES, parse_packet
 log = logging.getLogger(__name__)
 
 
+def _pkt_repr(pkt):
+    """Format a parsed packet for debug logging (suppress raw tuples)."""
+    return repr(pkt) if not isinstance(pkt, tuple) else ''
+
+
 class Connection:
     """A TCP connection to a TMW server with packet-level read/write."""
 
@@ -27,11 +32,12 @@ class Connection:
         self._recv_buf = bytearray()
         log.info('Connected to %s:%d', host, port)
 
-    def send_packet(self, data: bytes):
-        """Send a raw packet."""
+    def send_packet(self, data: bytes, msg=None):
+        """Send a raw packet. Pass *msg* (pre-serialization object) for verbose logging."""
         self.sock.sendall(data)
         pkt_id = struct.unpack_from('<H', data, 0)[0]
-        log.debug('Sent packet 0x%04x (%d bytes)', pkt_id, len(data))
+        log.debug('Sent packet 0x%04x (%d bytes) %s', pkt_id, len(data),
+                  repr(msg) if msg is not None else '')
 
     def _recv_bytes(self, n: int) -> bytes:
         """Receive exactly n bytes, buffering as needed."""
@@ -61,8 +67,9 @@ class Connection:
             # tells the server about transaction grouping, not our read size.
             len_bytes = self._recv_bytes(2)
             data = header + len_bytes
-            log.debug('Received packet 0x8000 (hold notify, 4 bytes)')
-            return parse_packet(pkt_id, data)
+            result = parse_packet(pkt_id, data)
+            log.debug('Received packet 0x8000 (hold notify, 4 bytes) %s', _pkt_repr(result))
+            return result
         elif size is not None:
             # Fixed-size packet
             remaining = self._recv_bytes(size - 2)
@@ -89,8 +96,9 @@ class Connection:
                 log.error('Unknown packet 0x%04x, cannot determine size!', pkt_id)
                 raise ValueError(f'Unknown packet ID 0x{pkt_id:04x}')
 
-        log.debug('Received packet 0x%04x (%d bytes)', pkt_id, len(data))
-        return parse_packet(pkt_id, data)
+        result = parse_packet(pkt_id, data)
+        log.debug('Received packet 0x%04x (%d bytes) %s', pkt_id, len(data), _pkt_repr(result))
+        return result
 
     def recv_packet_nonblock(self, timeout: float = 0.0):
         """Try to receive a packet with a short timeout. Returns None if nothing available."""
