@@ -278,6 +278,14 @@ class GameClient:
         self._pickup_queue: list[tuple] = []
         self._pickup_active: bool = False
 
+        # Behavior state (used by run_auto_behaviors)
+        self._auto_attack_target: int = 0
+        self._hunt_type: str = ''
+        self._hunt_home: tuple[int, int] | None = None
+        self._follow_target: int = 0
+        self._board_target: int = 0
+        self._attack_range: int = 1
+
     # ------------------------------------------------------------------
     # Login flow
     # ------------------------------------------------------------------

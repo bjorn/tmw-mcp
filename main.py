@@ -12,6 +12,7 @@ import os
 import sys
 import time
 
+from bot import run_auto_behaviors
 from game import GameClient, Being, FloorItem
 from packets import (
     BeingVisible, BeingMove, BeingSpawn, BeingRemove,
@@ -104,7 +105,12 @@ Commands:
   say MESSAGE        - Chat to nearby players
   whisper NAME MSG   - Send private message
   sit / stand        - Sit down / stand up
-  attack ID          - Attack a being
+  attack ID          - Attack a being (continuous)
+  stopattack         - Stop auto-attack and hunting
+  hunt NAME          - Hunt monsters by name (comma-separated for multiple)
+  hunt               - Stop hunting
+  follow NAME/ID     - Follow a player
+  follow             - Stop following
   pickup ID          - Pick up an item
   npc ID             - Click on an NPC
   next               - Continue NPC dialog
@@ -128,12 +134,17 @@ def run_interactive(client: GameClient):
     for b_id in list(client.beings.keys()):
         client.request_name(b_id)
 
+    tick_count = 0
     running = True
     while running:
         # Process incoming packets
         events = client.process_packets(timeout=0.1)
         for event in events:
             print_event(event, client)
+
+        # Automated behaviors (hunt, follow, auto-attack)
+        run_auto_behaviors(client, tick_count)
+        tick_count += 1
 
         # Send keepalive
         client.send_ping()
@@ -221,10 +232,50 @@ def run_interactive(client: GameClient):
             elif cmd == 'attack':
                 if args:
                     target_id = int(args)
-                    client.attack(target_id)
-                    print(f'  Attacking #{target_id}')
+                    client.attack(target_id, continuous=True)
+                    client._auto_attack_target = target_id
+                    print(f'  Attacking #{target_id} (continuous)')
                 else:
                     print('  Usage: attack ID')
+
+            elif cmd == 'stopattack':
+                client._auto_attack_target = 0
+                client._hunt_type = ''
+                client._hunt_home = None
+                print('  Stopped auto-attack and hunting.')
+
+            elif cmd == 'hunt':
+                if args:
+                    client._hunt_type = args.strip()
+                    client._hunt_home = (client.player.x, client.player.y)
+                    print(f'  Hunting: {client._hunt_type} (home: {client.player.x},{client.player.y})')
+                else:
+                    client._hunt_type = ''
+                    client._hunt_home = None
+                    print('  Stopped hunting.')
+
+            elif cmd == 'follow':
+                if args:
+                    target_id = None
+                    try:
+                        target_id = int(args)
+                    except ValueError:
+                        for b in client.beings.values():
+                            if b.name and b.name.lower() == args.lower():
+                                target_id = b.block_id
+                                break
+                    if target_id:
+                        client._follow_target = target_id
+                        client._hunt_type = ''
+                        client._hunt_home = None
+                        name = client.beings.get(target_id)
+                        name = name.name if name else f'#{target_id}'
+                        print(f'  Following {name}')
+                    else:
+                        print(f'  Cannot find player: {args}')
+                else:
+                    client._follow_target = 0
+                    print('  Stopped following.')
 
             elif cmd == 'pickup':
                 if args:
