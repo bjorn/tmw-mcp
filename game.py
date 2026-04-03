@@ -14,6 +14,7 @@ import struct
 import time
 from dataclasses import dataclass, field
 
+from monsters import monster_name
 from net import Connection
 from packets import (
     # Builders
@@ -526,6 +527,8 @@ class GameClient:
             b.hp = pkt.hp
             b.max_hp = pkt.max_hp
             b.direction = pkt.direction
+            if not b.name and pkt.species >= 1002:
+                b.name = monster_name(pkt.species)
             self.beings[pkt.block_id] = b
             if pkt.block_id == self.account_id:
                 self.player.x = pkt.x
@@ -543,12 +546,15 @@ class GameClient:
             b.speed = pkt.speed
             b.hp = pkt.hp
             b.max_hp = pkt.max_hp
+            if not b.name and pkt.species >= 1002:
+                b.name = monster_name(pkt.species)
             self.beings[pkt.block_id] = b
             return ('being_move', pkt)
 
         elif isinstance(pkt, BeingSpawn):
+            name = monster_name(pkt.species) if pkt.species >= 1002 else ''
             b = Being(block_id=pkt.block_id, species=pkt.species,
-                     x=pkt.x, y=pkt.y, speed=pkt.speed)
+                     x=pkt.x, y=pkt.y, speed=pkt.speed, name=name)
             self.beings[pkt.block_id] = b
             return ('being_spawn', pkt)
 
