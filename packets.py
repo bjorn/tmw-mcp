@@ -434,6 +434,7 @@ class BeingVisible:
     direction: int = 0
     hp: int = 0
     max_hp: int = 0
+    level: int = 0
 
 @dataclass
 class BeingMove:
@@ -448,6 +449,7 @@ class BeingMove:
     tick: int = 0
     hp: int = 0
     max_hp: int = 0
+    level: int = 0
 
 @dataclass
 class BeingSpawn:
@@ -894,6 +896,8 @@ def parse_packet(packet_id: int, data: bytes):
         result.max_hp = struct.unpack_from('<I', data, 36)[0]
         result.sex = data[45]
         result.x, result.y, result.direction = decode_pos1(data[46:49])
+        if packet_id == 0x01d8:
+            result.level = data[52]
         return result
 
     elif packet_id in (0x007b, 0x01da):
@@ -905,6 +909,8 @@ def parse_packet(packet_id: int, data: bytes):
         result.hp = struct.unpack_from('<I', data, 36)[0]
         result.max_hp = struct.unpack_from('<I', data, 40)[0]
         result.x0, result.y0, result.x1, result.y1 = decode_pos2(data[50:55])
+        if packet_id == 0x01da:
+            result.level = data[58]
         return result
 
     elif packet_id == 0x007c:

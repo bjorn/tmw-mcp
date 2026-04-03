@@ -456,7 +456,8 @@ def game_loop():
                     last_exp[0] = xp_now
                     xp_str = f' (+{xp_gained} EXP)' if xp_gained > 0 else ''
                     kill_name = getattr(killed, 'name', '') or monster_name(getattr(killed, 'species', 0)) or f'#{data.block_id}'
-                    push_notification(f'[Kill] {kill_name}{xp_str}')
+                    tag = '[Kill]' if xp_gained > 0 else '[Nearby Kill]'
+                    push_notification(f'{tag} {kill_name}{xp_str}')
 
             # Push channel notification for interesting events
             if is_wakeup_event(client, etype, data):
@@ -531,7 +532,8 @@ def format_game_state(client: GameClient) -> str:
     for b in client.nearby_beings(radius=30):
         name = b.name or monster_name(b.species)
         hp_str = f' HP:{b.hp}/{b.max_hp}' if b.max_hp > 0 else ''
-        lines.append(f'  [{b.block_id}] {name} at ({b.x},{b.y}){hp_str}')
+        lv_str = f' lv{b.level}' if b.level > 0 else ''
+        lines.append(f'  [{b.block_id}] {name} at ({b.x},{b.y}){lv_str}{hp_str}')
     lines.append('')
     lines.append('floor_items:')
     for item in client.nearby_items(radius=15):

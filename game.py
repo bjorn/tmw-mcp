@@ -166,6 +166,7 @@ class Being:
     hp: int = 0
     max_hp: int = 0
     direction: int = 0
+    level: int = 0
 
 
 @dataclass
@@ -527,6 +528,8 @@ class GameClient:
             b.hp = pkt.hp
             b.max_hp = pkt.max_hp
             b.direction = pkt.direction
+            if pkt.level:
+                b.level = pkt.level
             if not b.name and pkt.species >= 1002:
                 b.name = monster_name(pkt.species)
             self.beings[pkt.block_id] = b
@@ -546,6 +549,8 @@ class GameClient:
             b.speed = pkt.speed
             b.hp = pkt.hp
             b.max_hp = pkt.max_hp
+            if pkt.level:
+                b.level = pkt.level
             if not b.name and pkt.species >= 1002:
                 b.name = monster_name(pkt.species)
             self.beings[pkt.block_id] = b
