@@ -273,6 +273,8 @@ class GameClient:
         self._path_goal: tuple[int, int] | None = None
         self._path_callback = None  # callable(success: bool, x: int, y: int)
         self._walk_arrival: float = 0.0
+        self._walk_dest: tuple[int, int] | None = None
+        self._walk_response_received: bool = True
 
         # Pickup queue — processed one at a time
         self._pickup_queue: list[tuple] = []
@@ -565,8 +567,12 @@ class GameClient:
             self._walk_dest = (pkt.x1, pkt.y1)
             self._walk_response_received = True
             if abs(pkt.x0 - old_x) > 1 or abs(pkt.y0 - old_y) > 1:
-                log.warning('Walk source mismatch! Server says from (%d,%d) but we thought (%d,%d) -> dest (%d,%d)',
-                            pkt.x0, pkt.y0, old_x, old_y, pkt.x1, pkt.y1)
+                # Expected when a new walk is issued mid-stride — the server
+                # has moved us tile-by-tile since our last position update.
+                # The x0 from WalkResponse is authoritative; we already
+                # snapped to it above.
+                log.debug('Walk source correction: server at (%d,%d), we thought (%d,%d) -> dest (%d,%d)',
+                           pkt.x0, pkt.y0, old_x, old_y, pkt.x1, pkt.y1)
             return ('walk', pkt)
 
         elif isinstance(pkt, PlayerStop):
@@ -836,17 +842,22 @@ class GameClient:
 
     def _walk_step(self, x: int, y: int):
         """Send a single walk packet, clamping to max ~10 tiles."""
-        import math
         px, py = self.player.x, self.player.y
         dx, dy = x - px, y - py
-        dist = abs(dx) + abs(dy)
+        adx, ady = abs(dx), abs(dy)
         max_dist = 10
-        if dist > max_dist and dist > 0:
-            scale = max_dist / max(abs(dx), abs(dy)) if max(abs(dx), abs(dy)) > 0 else 1
+        if adx + ady > max_dist and adx + ady > 0:
+            scale = max_dist / max(adx, ady) if max(adx, ady) > 0 else 1
             x = px + int(dx * scale)
             y = py + int(dy * scale)
-            dist = abs(x - px) + abs(y - py)
-        self._walk_arrival = time.time() + dist * 0.15
+            adx, ady = abs(x - px), abs(y - py)
+        # Server walks diagonally first, then cardinal for the remainder.
+        # Diagonal tiles take speed * 1.4, cardinal tiles take speed.
+        # (see calc_next_walk_step in tmwa/src/map/pc.cpp)
+        speed_s = self.player.speed / 1000.0  # ms -> seconds
+        diagonal = min(adx, ady)
+        cardinal = adx + ady - 2 * diagonal
+        self._walk_arrival = time.time() + diagonal * speed_s * 1.4 + cardinal * speed_s
         self._walk_response_received = False
         self.map_conn.send_packet(build_walk(x, y))
 
