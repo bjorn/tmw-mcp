@@ -368,6 +368,10 @@ def format_event(client: GameClient, etype: str, data) -> str | None:
         return '[NPC done - send "close"]'
     elif etype == 'npc_choice':
         return f'[NPC choices: {", ".join(f"{i+1}={c}" for i, c in enumerate(data.choices))}]'
+    elif etype == 'npc_str_input_request':
+        return '[NPC requests text input - use tmw_npc_input_str]'
+    elif etype == 'npc_int_input_request':
+        return '[NPC requests number input - use tmw_npc_input_int]'
     elif etype == 'shop_choice':
         return f'[Shop NPC #{data.npc_id} - use tmw_shop_buy or tmw_shop_sell]'
     elif etype == 'shop_buy_list':
@@ -403,6 +407,7 @@ def format_event(client: GameClient, etype: str, data) -> str | None:
 WAKEUP_EVENTS = {
     'chat', 'whisper', 'gm_chat', 'party_chat',
     'npc_message', 'npc_next', 'npc_close', 'npc_choice',
+    'npc_str_input_request', 'npc_int_input_request',
     'shop_choice', 'shop_buy_list', 'shop_sell_list',
     'shop_buy_result', 'shop_sell_result',
     'map_change', 'map_server_change',

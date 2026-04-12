@@ -75,6 +75,8 @@ from packets import (
     NpcNext,
     NpcClose,
     NpcChoice,
+    NpcIntInputRequest,
+    NpcStrInputRequest,
     BeingChangeLook,
     SkillDamage,
     BeingStatusChange,
@@ -258,6 +260,7 @@ class GameClient:
         self.npc_waiting_next: bool = False
         self.npc_waiting_close: bool = False
         self.npc_waiting_choice: bool = False
+        self.npc_waiting_input: str = ''  # '', 'int', or 'str'
 
         # Chat log
         self.chat_log: list[str] = []
@@ -754,6 +757,16 @@ class GameClient:
             self.npc_choices = pkt.choices
             self.npc_waiting_choice = True
             return ('npc_choice', pkt)
+
+        elif isinstance(pkt, NpcIntInputRequest):
+            self.npc_id = pkt.npc_id
+            self.npc_waiting_input = 'int'
+            return ('npc_int_input_request', pkt)
+
+        elif isinstance(pkt, NpcStrInputRequest):
+            self.npc_id = pkt.npc_id
+            self.npc_waiting_input = 'str'
+            return ('npc_str_input_request', pkt)
 
         elif isinstance(pkt, NpcBuySellChoice):
             self.npc_id = pkt.npc_id

@@ -677,6 +677,16 @@ class NpcChoice:
     choices: list[str] = field(default_factory=list)
 
 @dataclass
+class NpcIntInputRequest:
+    """0x0142: Server requests integer input from player."""
+    npc_id: int = 0
+
+@dataclass
+class NpcStrInputRequest:
+    """0x01d4: Server requests string input from player."""
+    npc_id: int = 0
+
+@dataclass
 class StatUpdate5:
     """0x00bd: Big stat update with all attributes."""
     status_point: int = 0
@@ -1081,6 +1091,12 @@ def parse_packet(packet_id: int, data: bytes):
         raw = data[8:length].rstrip(b'\x00').decode('utf-8', errors='replace')
         choices = [c for c in raw.split(':') if c]
         return NpcChoice(npc_id=npc_id, choices=choices)
+
+    elif packet_id == 0x0142:
+        return NpcIntInputRequest(npc_id=struct.unpack_from('<I', data, 2)[0])
+
+    elif packet_id == 0x01d4:
+        return NpcStrInputRequest(npc_id=struct.unpack_from('<I', data, 2)[0])
 
     elif packet_id == 0x00bd:
         r = StatUpdate5()

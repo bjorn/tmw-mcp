@@ -212,12 +212,23 @@ def _execute_tool_command(client: GameClient, cmd: str, kw: dict) -> str:
         client.npc_waiting_close = False
         client.npc_waiting_next = False
         client.npc_waiting_choice = False
+        client.npc_waiting_input = ''
         client.npc_dialog.clear()
         return f'NPC: close #{npc_id}'
 
     elif cmd == 'choose':
         client.npc_choose(kw['choice'])
         return f'NPC: chose {kw["choice"]}'
+
+    elif cmd == 'npc_input_str':
+        client.npc_input_str(kw['text'])
+        client.npc_waiting_input = ''
+        return f'NPC: input "{kw["text"]}"'
+
+    elif cmd == 'npc_input_int':
+        client.npc_input_int(kw['value'])
+        client.npc_waiting_input = ''
+        return f'NPC: input {kw["value"]}'
 
     elif cmd == 'sit':
         client.sit()
@@ -553,6 +564,10 @@ def format_game_state(client: GameClient) -> str:
         for i, c in enumerate(client.npc_choices, 1):
             lines.append(f'  [{i}] {c}')
         lines.append('  [waiting: choose N]')
+    if client.npc_waiting_input == 'str':
+        lines.append('  [waiting: text input]')
+    elif client.npc_waiting_input == 'int':
+        lines.append('  [waiting: number input]')
     return '\n'.join(lines)
 
 
@@ -865,6 +880,20 @@ def tmw_npc_choose(ctx: Context, choice: int) -> str:
     """Choose an NPC menu option (1-based index)."""
     ensure_session(ctx)
     return send_command('choose', choice=choice)
+
+
+@mcp.tool()
+def tmw_npc_input_str(ctx: Context, text: str) -> str:
+    """Submit text input to an NPC dialog."""
+    ensure_session(ctx)
+    return send_command('npc_input_str', text=text)
+
+
+@mcp.tool()
+def tmw_npc_input_int(ctx: Context, value: int) -> str:
+    """Submit integer input to an NPC dialog."""
+    ensure_session(ctx)
+    return send_command('npc_input_int', value=value)
 
 
 # --- Social tools ---
