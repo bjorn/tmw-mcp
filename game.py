@@ -77,6 +77,12 @@ from packets import (
     NpcChoice,
     NpcIntInputRequest,
     NpcStrInputRequest,
+    TradeRequest,
+    TradeResponse,
+    TradeItemAdd,
+    TradeOk,
+    TradeCancel,
+    TradeComplete,
     BeingChangeLook,
     SkillDamage,
     BeingStatusChange,
@@ -767,6 +773,24 @@ class GameClient:
             self.npc_id = pkt.npc_id
             self.npc_waiting_input = 'str'
             return ('npc_str_input_request', pkt)
+
+        elif isinstance(pkt, TradeRequest):
+            return ('trade_request', pkt)
+
+        elif isinstance(pkt, TradeResponse):
+            return ('trade_response', pkt)
+
+        elif isinstance(pkt, TradeItemAdd):
+            return ('trade_item_add', pkt)
+
+        elif isinstance(pkt, TradeOk):
+            return ('trade_ok', pkt)
+
+        elif isinstance(pkt, TradeCancel):
+            return ('trade_cancel', pkt)
+
+        elif isinstance(pkt, TradeComplete):
+            return ('trade_complete', pkt)
 
         elif isinstance(pkt, NpcBuySellChoice):
             self.npc_id = pkt.npc_id

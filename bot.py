@@ -372,6 +372,23 @@ def format_event(client: GameClient, etype: str, data) -> str | None:
         return '[NPC requests text input - use tmw_npc_input_str]'
     elif etype == 'npc_int_input_request':
         return '[NPC requests number input - use tmw_npc_input_int]'
+    elif etype == 'trade_request':
+        return f'[Trade] {data.char_name} wants to trade! Use tmw_trade_accept or tmw_trade_reject.'
+    elif etype == 'trade_response':
+        msgs = {0: 'too far', 1: 'character does not exist', 2: 'busy', 3: 'accepted', 4: 'rejected', 5: 'blocked by GM'}
+        return f'[Trade] Response: {msgs.get(data.type, "unknown")}'
+    elif etype == 'trade_item_add':
+        if data.name_id == 0:
+            return f'[Trade] Other party added {data.amount} GP'
+        from items import item_name
+        return f'[Trade] Other party added {data.amount}x {item_name(data.name_id)}'
+    elif etype == 'trade_ok':
+        who = 'you' if data.who == 0 else 'other party'
+        return f'[Trade] {who} locked. Use tmw_trade_commit after both sides lock.'
+    elif etype == 'trade_cancel':
+        return '[Trade] Trade cancelled.'
+    elif etype == 'trade_complete':
+        return f'[Trade] {"SUCCESS" if data.fail == 0 else "FAILED"}'
     elif etype == 'shop_choice':
         return f'[Shop NPC #{data.npc_id} - use tmw_shop_buy or tmw_shop_sell]'
     elif etype == 'shop_buy_list':
@@ -408,6 +425,8 @@ WAKEUP_EVENTS = {
     'chat', 'whisper', 'gm_chat', 'party_chat',
     'npc_message', 'npc_next', 'npc_close', 'npc_choice',
     'npc_str_input_request', 'npc_int_input_request',
+    'trade_request', 'trade_response', 'trade_item_add',
+    'trade_ok', 'trade_cancel', 'trade_complete',
     'shop_choice', 'shop_buy_list', 'shop_sell_list',
     'shop_buy_result', 'shop_sell_result',
     'map_change', 'map_server_change',

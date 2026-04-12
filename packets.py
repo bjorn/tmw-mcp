@@ -298,6 +298,39 @@ def build_npc_sell(items: list[tuple[int, int]]) -> bytes:
     return pkt
 
 
+def build_trade_request(block_id: int) -> bytes:
+    """0x00e4: Ask another player to trade."""
+    return struct.pack('<HI', 0x00e4, block_id)
+
+
+def build_trade_response(accept: bool) -> bytes:
+    """0x00e6: Respond to a trade request (type 3=accept, 4=reject)."""
+    return struct.pack('<HB', 0x00e6, 3 if accept else 4)
+
+
+def build_trade_add(index: int, amount: int) -> bytes:
+    """0x00e8: Add an item or zeny to the trade.
+
+    index=0 means zeny; otherwise inventory index (ioff2, which is index+2 per TMWA convention).
+    """
+    return struct.pack('<HHI', 0x00e8, index, amount)
+
+
+def build_trade_lock() -> bytes:
+    """0x00eb: Indicate readiness to end trade (half-lock)."""
+    return struct.pack('<H', 0x00eb)
+
+
+def build_trade_cancel() -> bytes:
+    """0x00ed: Cancel an ongoing trade."""
+    return struct.pack('<H', 0x00ed)
+
+
+def build_trade_commit() -> bytes:
+    """0x00ef: Actually perform the trade (after both sides locked)."""
+    return struct.pack('<H', 0x00ef)
+
+
 def build_npc_int_input(npc_id: int, value: int) -> bytes:
     """0x0143: Submit integer input to NPC."""
     return struct.pack('<HIi', 0x0143, npc_id, value)
@@ -675,6 +708,37 @@ class NpcChoice:
     """0x00b7"""
     npc_id: int = 0
     choices: list[str] = field(default_factory=list)
+
+@dataclass
+class TradeRequest:
+    """0x00e5: Someone wants to trade with you."""
+    char_name: str = ''
+
+@dataclass
+class TradeResponse:
+    """0x00e7: Result of our trade request (0=too far, 1=character doesn't exist, 2=busy, 3=accepted, 4=rejected, 5=GM block)."""
+    type: int = 0
+
+@dataclass
+class TradeItemAdd:
+    """0x00e9: Other party added an item (or zeny if name_id=0)."""
+    amount: int = 0
+    name_id: int = 0
+
+@dataclass
+class TradeOk:
+    """0x00ec: Someone locked their side (who: 0=self, 1=other)."""
+    who: int = 0
+
+@dataclass
+class TradeCancel:
+    """0x00ee: Trade cancelled."""
+    pass
+
+@dataclass
+class TradeComplete:
+    """0x00f0: Trade result (fail: 0=success, 1=fail)."""
+    fail: int = 0
 
 @dataclass
 class NpcIntInputRequest:
@@ -1091,6 +1155,27 @@ def parse_packet(packet_id: int, data: bytes):
         raw = data[8:length].rstrip(b'\x00').decode('utf-8', errors='replace')
         choices = [c for c in raw.split(':') if c]
         return NpcChoice(npc_id=npc_id, choices=choices)
+
+    elif packet_id == 0x00e5:
+        name = data[2:26].rstrip(b'\x00').decode('utf-8', errors='replace')
+        return TradeRequest(char_name=name)
+
+    elif packet_id == 0x00e7:
+        return TradeResponse(type=data[2])
+
+    elif packet_id == 0x00e9:
+        amount = struct.unpack_from('<I', data, 2)[0]
+        name_id = struct.unpack_from('<H', data, 6)[0]
+        return TradeItemAdd(amount=amount, name_id=name_id)
+
+    elif packet_id == 0x00ec:
+        return TradeOk(who=data[2])
+
+    elif packet_id == 0x00ee:
+        return TradeCancel()
+
+    elif packet_id == 0x00f0:
+        return TradeComplete(fail=data[2])
 
     elif packet_id == 0x0142:
         return NpcIntInputRequest(npc_id=struct.unpack_from('<I', data, 2)[0])

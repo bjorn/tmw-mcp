@@ -230,6 +230,61 @@ def _execute_tool_command(client: GameClient, cmd: str, kw: dict) -> str:
         client.npc_waiting_input = ''
         return f'NPC: input {kw["value"]}'
 
+    elif cmd == 'trade_request':
+        from packets import build_trade_request
+        target = kw['target']
+        being = None
+        for b in client.beings.values():
+            if b.name and b.name.lower() == target.lower():
+                being = b
+                break
+        if not being:
+            return f'Cannot find player: {target}'
+        client.map_conn.send_packet(build_trade_request(being.block_id))
+        return f'Trade requested with {being.name}'
+
+    elif cmd == 'trade_accept':
+        from packets import build_trade_response
+        client.map_conn.send_packet(build_trade_response(True))
+        return 'Trade accepted'
+
+    elif cmd == 'trade_reject':
+        from packets import build_trade_response
+        client.map_conn.send_packet(build_trade_response(False))
+        return 'Trade rejected'
+
+    elif cmd == 'trade_add_item':
+        from packets import build_trade_add
+        idx = kw['index']
+        item = client.inventory.get(idx)
+        if not item:
+            return f'No item at index {idx}'
+        amount = kw.get('amount', 0) or item.amount
+        # TMWA ioff2: inventory index + 2 for items
+        client.map_conn.send_packet(build_trade_add(idx + 2, amount))
+        return f'Added {amount}x {item_name(item.name_id)} to trade'
+
+    elif cmd == 'trade_add_zeny':
+        from packets import build_trade_add
+        amount = kw['amount']
+        client.map_conn.send_packet(build_trade_add(0, amount))
+        return f'Added {amount} GP to trade'
+
+    elif cmd == 'trade_lock':
+        from packets import build_trade_lock
+        client.map_conn.send_packet(build_trade_lock())
+        return 'Trade locked (ready)'
+
+    elif cmd == 'trade_commit':
+        from packets import build_trade_commit
+        client.map_conn.send_packet(build_trade_commit())
+        return 'Trade committed'
+
+    elif cmd == 'trade_cancel':
+        from packets import build_trade_cancel
+        client.map_conn.send_packet(build_trade_cancel())
+        return 'Trade cancelled'
+
     elif cmd == 'sit':
         client.sit()
         return 'Sitting down'
@@ -894,6 +949,64 @@ def tmw_npc_input_int(ctx: Context, value: int) -> str:
     """Submit integer input to an NPC dialog."""
     ensure_session(ctx)
     return send_command('npc_input_int', value=value)
+
+
+# --- Trade tools ---
+
+@mcp.tool()
+def tmw_trade_request(ctx: Context, target: str) -> str:
+    """Request a player-to-player trade with the given player name."""
+    ensure_session(ctx)
+    return send_command('trade_request', target=target)
+
+
+@mcp.tool()
+def tmw_trade_accept(ctx: Context) -> str:
+    """Accept an incoming trade request."""
+    ensure_session(ctx)
+    return send_command('trade_accept')
+
+
+@mcp.tool()
+def tmw_trade_reject(ctx: Context) -> str:
+    """Reject an incoming trade request."""
+    ensure_session(ctx)
+    return send_command('trade_reject')
+
+
+@mcp.tool()
+def tmw_trade_add_item(ctx: Context, index: int, amount: int = 0) -> str:
+    """Add an inventory item to the trade offer (amount=0 means entire stack)."""
+    ensure_session(ctx)
+    return send_command('trade_add_item', index=index, amount=amount)
+
+
+@mcp.tool()
+def tmw_trade_add_zeny(ctx: Context, amount: int) -> str:
+    """Add zeny (GP) to the trade offer."""
+    ensure_session(ctx)
+    return send_command('trade_add_zeny', amount=amount)
+
+
+@mcp.tool()
+def tmw_trade_lock(ctx: Context) -> str:
+    """Lock your side of the trade (indicate readiness to commit)."""
+    ensure_session(ctx)
+    return send_command('trade_lock')
+
+
+@mcp.tool()
+def tmw_trade_commit(ctx: Context) -> str:
+    """Commit the trade after both sides have locked."""
+    ensure_session(ctx)
+    return send_command('trade_commit')
+
+
+@mcp.tool()
+def tmw_trade_cancel(ctx: Context) -> str:
+    """Cancel the current trade."""
+    ensure_session(ctx)
+    return send_command('trade_cancel')
 
 
 # --- Social tools ---
