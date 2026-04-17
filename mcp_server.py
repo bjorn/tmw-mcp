@@ -452,6 +452,8 @@ def game_loop():
 
     last_exp = [0]  # mutable for closure; tracks EXP for kill notifications
     last_beings = {}  # block_id -> being data, for kill name lookups
+    nearby_kill_buffer: dict[str, int] = {}  # name -> count, flushed once/min
+    nearby_kill_flush_at = time.time() + 60.0
 
     while state.running:
         try:
@@ -522,8 +524,10 @@ def game_loop():
                     last_exp[0] = xp_now
                     xp_str = f' (+{xp_gained} EXP)' if xp_gained > 0 else ''
                     kill_name = getattr(killed, 'name', '') or monster_name(getattr(killed, 'species', 0)) or f'#{data.block_id}'
-                    tag = '[Kill]' if xp_gained > 0 else '[Nearby Kill]'
-                    push_notification(f'{tag} {kill_name}{xp_str}')
+                    if xp_gained > 0:
+                        push_notification(f'[Kill] {kill_name}{xp_str}')
+                    else:
+                        nearby_kill_buffer[kill_name] = nearby_kill_buffer.get(kill_name, 0) + 1
 
             # Push channel notification for interesting events
             if is_wakeup_event(client, etype, data):
@@ -545,6 +549,22 @@ def game_loop():
           except Exception as e:
             log.error('Event handler error: %s', e, exc_info=True)
             write_log(f'[ERROR] Event handler: {e}')
+
+        # Flush buffered nearby-kill summary once per minute
+        now = time.time()
+        if now >= nearby_kill_flush_at:
+            if nearby_kill_buffer:
+                parts = ', '.join(
+                    f'{n} x{c}' for n, c in sorted(
+                        nearby_kill_buffer.items(), key=lambda kv: -kv[1]
+                    )
+                )
+                total = sum(nearby_kill_buffer.values())
+                push_notification(
+                    f'[Nearby Kills] {total} in last minute: {parts}'
+                )
+                nearby_kill_buffer.clear()
+            nearby_kill_flush_at = now + 60.0
 
         # Automated behaviors
         run_auto_behaviors(client, tick_count)
