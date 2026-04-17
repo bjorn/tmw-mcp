@@ -5,7 +5,9 @@ A Python client for [The Mana World](https://www.themanaworld.org/) MMORPG, expo
 ## Quick Start
 
 ```bash
-pip install mcp
+# Install dependencies in a venv (from repo root)
+python3 -m venv ../.venv
+../.venv/bin/pip install -r ../requirements.txt
 
 # Register a game account (only needed once)
 python3 register.py --user USERNAME --char-name CHARNAME
@@ -14,10 +16,10 @@ python3 register.py --user USERNAME --char-name CHARNAME
 claude --dangerously-load-development-channels server:tmw-bot
 ```
 
-Configure the MCP server in `.mcp.json`:
+Configure the MCP server in `.mcp.json` (points at the venv Python):
 
 ```json
-{ "mcpServers": { "tmw-bot": { "command": "python3", "args": ["mcp_server.py"] } } }
+{ "mcpServers": { "tmw-bot": { "command": ".venv/bin/python", "args": ["client/mcp_server.py"] } } }
 ```
 
 ## How It Works
