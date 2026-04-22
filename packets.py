@@ -188,6 +188,12 @@ def build_walk(x: int, y: int, direction: int = 0) -> bytes:
     return pkt
 
 
+def build_close_storage() -> bytes:
+    """0x00f7: Close the storage (Kafra) window. Clears sd->state.storage_open
+    server-side; without this, walks/item-use are silently dropped while it's set."""
+    return struct.pack('<H', 0x00f7)
+
+
 def build_player_action(target_id: int, action: int) -> bytes:
     """0x0089: Perform action (attack, sit, stand).
     action: 0=attack, 7=continuous attack, 2=sit, 3=stand

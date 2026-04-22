@@ -216,6 +216,10 @@ def _execute_tool_command(client: GameClient, cmd: str, kw: dict) -> str:
         client.npc_dialog.clear()
         return f'NPC: close #{npc_id}'
 
+    elif cmd == 'close_storage':
+        client.close_storage()
+        return 'Sent CMSG_CLOSE_STORAGE'
+
     elif cmd == 'choose':
         client.npc_choose(kw['choice'])
         return f'NPC: chose {kw["choice"]}'
@@ -944,10 +948,21 @@ def tmw_npc_next(ctx: Context) -> str:
 
 
 @mcp.tool()
-def tmw_npc_close(ctx: Context) -> str:
-    """Close NPC dialog."""
+def tmw_npc_close(ctx: Context, npc_id: int = 0) -> str:
+    """Close NPC dialog. If npc_id is 0 (default), closes the NPC tracked by the client;
+    pass an explicit id to close a specific NPC when the client state is stale (e.g., after
+    clicking a storage NPC that never sent a dialog packet)."""
     ensure_session(ctx)
-    return send_command('close')
+    return send_command('close', npc_id=npc_id)
+
+
+@mcp.tool()
+def tmw_close_storage(ctx: Context) -> str:
+    """Send CMSG_CLOSE_STORAGE (0x00f7) to the server. Required after clicking a storage
+    NPC — without it, the server leaves sd->state.storage_open set and silently drops
+    walks and item-use packets."""
+    ensure_session(ctx)
+    return send_command('close_storage')
 
 
 @mcp.tool()

@@ -26,6 +26,7 @@ from packets import (
     build_map_loaded,
     build_ping,
     build_walk,
+    build_close_storage,
     build_player_action,
     build_chat,
     build_npc_click,
@@ -1079,6 +1080,7 @@ class GameClient:
 
     def click_npc(self, npc_id: int):
         """Click on an NPC."""
+        self.npc_id = npc_id
         self.npc_dialog_open = True
         self.npc_dialog.clear()
         self.npc_choices.clear()
@@ -1086,6 +1088,11 @@ class GameClient:
         self.npc_waiting_close = False
         self.npc_waiting_choice = False
         self.map_conn.send_packet(build_npc_click(npc_id))
+
+    def close_storage(self):
+        """Close the server-side storage (Kafra) window. Must be called after clicking a
+        storage NPC, otherwise the server silently blocks walks and item use."""
+        self.map_conn.send_packet(build_close_storage())
 
     def npc_next_response(self):
         """Continue NPC dialog."""
