@@ -480,11 +480,11 @@ def run_auto_behaviors(client: GameClient, tick_count: int):
         else:
             client._auto_attack_target = 0
             write_log(f'[Auto-attack target #{auto_target} gone]')
-            # Auto-pickup nearby items after kill
+            # Auto-pickup nearby items after kill (queue all in radius;
+            # the pickup queue dedupes and processes sequentially).
             if client._hunt_type:
                 for item in client.nearby_items(radius=5):
                     client.queue_pickup(item.block_id)
-                    break
 
     # Hunt mode: find nearest monster of target type(s) and attack it
     hunt_type = client._hunt_type
@@ -512,13 +512,12 @@ def run_auto_behaviors(client: GameClient, tick_count: int):
             client._auto_attack_target = best.block_id
             client.walk_to(best.x, best.y)
         else:
-            # Pick up nearby items first
+            # Pick up nearby items first (queue all in radius)
             picked = False
             if client.floor_items:
                 for item in client.nearby_items(radius=5):
                     client.queue_pickup(item.block_id)
                     picked = True
-                    break
             # Roam to find more monsters (every ~3 seconds = tick_count % 12)
             # Roam relative to HOME position, not current position
             # Avoid warp tiles to prevent accidentally leaving the map
