@@ -285,6 +285,7 @@ class GameClient:
         self._path_goal: tuple[int, int] | None = None
         self._path_callback = None  # callable(success: bool, x: int, y: int)
         self._walk_arrival: float = 0.0
+        self._walk_sent_at: float = 0.0
         self._walk_dest: tuple[int, int] | None = None
         self._walk_response_received: bool = True
 
@@ -898,11 +899,11 @@ class GameClient:
         self._walk_step(x, y)
 
     def _walk_step(self, x: int, y: int):
-        """Send a single walk packet, clamping to max ~10 tiles."""
+        """Send a single walk packet. Clamps to stay under the server's walkpath limit (MAX_WALKPATH=48)."""
         px, py = self.player.x, self.player.y
         dx, dy = x - px, y - py
         adx, ady = abs(dx), abs(dy)
-        max_dist = 10
+        max_dist = 30  # headroom under server MAX_WALKPATH=48
         if adx + ady > max_dist and adx + ady > 0:
             scale = max_dist / max(adx, ady) if max(adx, ady) > 0 else 1
             x = px + int(dx * scale)
@@ -914,7 +915,9 @@ class GameClient:
         speed_s = self.player.speed / 1000.0  # ms -> seconds
         diagonal = min(adx, ady)
         cardinal = adx + ady - 2 * diagonal
-        self._walk_arrival = time.time() + diagonal * speed_s * 1.4 + cardinal * speed_s
+        now = time.time()
+        self._walk_sent_at = now
+        self._walk_arrival = now + diagonal * speed_s * 1.4 + cardinal * speed_s
         self._walk_response_received = False
         self.map_conn.send_packet(build_walk(x, y))
 
@@ -945,29 +948,59 @@ class GameClient:
                 callback(True, x, y)
             return
 
-        # Break path into waypoints spaced ~10 tiles apart
+        # Waypoints at direction changes: each segment is a straight run
+        # (cardinal or diagonal), which the server walks reliably without
+        # having to re-plan around obstacles. Long runs are split to keep
+        # each walk packet modest.
+        MAX_RUN = 20
         waypoints = []
-        i = 10
-        while i < len(path):
-            waypoints.append(path[i])
-            i += 10
-        # Always include final destination
-        if not waypoints or waypoints[-1] != path[-1]:
-            waypoints.append(path[-1])
+        seg_dir = None
+        run_len = 0
+        for i in range(1, len(path)):
+            dx = path[i][0] - path[i - 1][0]
+            dy = path[i][1] - path[i - 1][1]
+            d = (dx, dy)
+            if d != seg_dir or run_len >= MAX_RUN:
+                if seg_dir is not None:
+                    waypoints.append(path[i - 1])
+                seg_dir = d
+                run_len = 1
+            else:
+                run_len += 1
+        waypoints.append(path[-1])
 
         self._path_queue = waypoints
         # Send first step
         first = self._path_queue.pop(0)
         self._walk_step(first[0], first[1])
 
+    # How long we wait for a WalkResponse ack past the sent time before
+    # concluding the server dropped the walk packet.
+    _WALK_ACK_TIMEOUT = 1.5
+
     def _advance_path(self):
         """Called from game loop to send next path segment when current walk completes."""
         if self._path_goal is None:
             return
+        if not self._walk_response_received:
+            # Watchdog: if the server never acknowledged, the walk was dropped
+            # (e.g. destination currently blocked by a being). Abort with
+            # callback(False) instead of stalling the caller.
+            if time.time() > self._walk_sent_at + self._WALK_ACK_TIMEOUT:
+                log.warning('walk: no WalkResponse within %.1fs, aborting path to %s',
+                            self._WALK_ACK_TIMEOUT, self._path_goal)
+                goal = self._path_goal
+                cb = self._path_callback
+                self._path_queue.clear()
+                self._path_goal = None
+                self._path_callback = None
+                self._walk_response_received = True  # unblock future walks
+                self._pickup_active = False
+                if cb:
+                    cb(False, goal[0], goal[1])
+            return
         if time.time() < self._walk_arrival:
             return  # still walking
-        if not self._walk_response_received:
-            return  # waiting for server to confirm walk
 
         self._snap_walk_position()
 

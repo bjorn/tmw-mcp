@@ -165,7 +165,7 @@ def _execute_tool_command(client: GameClient, cmd: str, kw: dict) -> str:
             if success:
                 push_notification(f'[Walk] Arrived at ({x},{y})')
             else:
-                push_notification(f'[Walk] No path to ({x},{y})')
+                push_notification(f'[Walk] Failed to reach ({x},{y})')
         client.walk_path(kw['x'], kw['y'], callback=on_walk_done)
         return f'Pathfinding walk to ({kw["x"]},{kw["y"]})'
 
