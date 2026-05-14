@@ -42,6 +42,8 @@ import sys
 import threading
 from typing import Any
 
+from .paths import mcp_shim_startup_log_path
+
 # Logging goes to stderr; stdout is the MCP protocol pipe.
 logging.basicConfig(
     level=logging.INFO,
@@ -525,7 +527,7 @@ def main() -> None:
     # Mirror mcp_server.py: log startup failures to a file so we can diagnose
     # things even when Claude Code does not surface stderr.
     _fh = logging.FileHandler(
-        os.path.join(CLIENT_DIR, 'mcp_shim_startup.log'), mode='w',
+        mcp_shim_startup_log_path(), mode='w',
     )
     _fh.setFormatter(logging.Formatter(
         '%(asctime)s %(levelname)s %(name)s: %(message)s',

@@ -11,7 +11,6 @@ Run with: .venv/bin/python -m unittest tests.test_resources
 
 from __future__ import annotations
 
-import io
 import os
 import sys
 import tempfile
@@ -19,12 +18,13 @@ import unittest
 import urllib.parse
 import zipfile
 import zlib
+from unittest import mock
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from tmw_mcp.resources import ResourceManager, UpdateEntry
+from tmw_mcp.resources import ResourceManager
 
 
 def _make_zip(path: str, files: dict[str, bytes]) -> int:
@@ -55,7 +55,28 @@ def _host_url(host_dir: str) -> str:
     return 'file://' + urllib.parse.quote(host_dir.rstrip('/')) + '/'
 
 
-class ManifestParseTest(unittest.TestCase):
+class _CachingTest(unittest.TestCase):
+    """Base: each test method gets its own XDG_CACHE_HOME tempdir.
+
+    ``mock.patch.dict(os.environ, ...)`` restores the *original* value
+    rather than popping the key, so we don't leak into ~/.cache when
+    tests/__init__.py has pre-set XDG_CACHE_HOME to a tempdir.
+    """
+
+    def setUp(self) -> None:
+        self._cache_dir = tempfile.mkdtemp(prefix='tmw-resource-test-')
+        self.addCleanup(self._wipe_cache)
+        patcher = mock.patch.dict(os.environ,
+                                  {'XDG_CACHE_HOME': self._cache_dir})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _wipe_cache(self) -> None:
+        import shutil
+        shutil.rmtree(self._cache_dir, ignore_errors=True)
+
+
+class ManifestParseTest(_CachingTest):
     """The manifest parser must accept the live TMW format verbatim."""
 
     def test_parses_live_format(self):
@@ -78,15 +99,11 @@ class ManifestParseTest(unittest.TestCase):
             self.assertEqual(rm.list_files(''), ['items.xml'])
 
 
-class DownloadAndVerifyTest(unittest.TestCase):
+class DownloadAndVerifyTest(_CachingTest):
     """Download path: missing zips are fetched and verified."""
 
     def test_downloads_missing_zip_and_verifies_adler(self):
-        with tempfile.TemporaryDirectory() as host, \
-                tempfile.TemporaryDirectory() as cache:
-            os.environ['XDG_CACHE_HOME'] = cache
-            self.addCleanup(os.environ.pop, 'XDG_CACHE_HOME', None)
-
+        with tempfile.TemporaryDirectory() as host:
             zip_path = os.path.join(host, 'TMW.zip')
             adler = _make_zip(zip_path, {
                 'items.xml': b'<items><item id="1" name="Bow"/></items>',
@@ -105,11 +122,7 @@ class DownloadAndVerifyTest(unittest.TestCase):
             self.assertIn(b'Bow', rm.open('items.xml'))
 
     def test_adler_mismatch_raises_and_leaves_no_partial_file(self):
-        with tempfile.TemporaryDirectory() as host, \
-                tempfile.TemporaryDirectory() as cache:
-            os.environ['XDG_CACHE_HOME'] = cache
-            self.addCleanup(os.environ.pop, 'XDG_CACHE_HOME', None)
-
+        with tempfile.TemporaryDirectory() as host:
             zip_path = os.path.join(host, 'BAD.zip')
             _make_zip(zip_path, {'a.txt': b'hi'})
             # Lie about the hash.
@@ -123,8 +136,8 @@ class DownloadAndVerifyTest(unittest.TestCase):
 
             # The .part should have been cleaned up, and the final
             # cache file should never have been created.
-            for fname in os.listdir(cache):
-                full = os.path.join(cache, fname)
+            for fname in os.listdir(self._cache_dir):
+                full = os.path.join(self._cache_dir, fname)
                 if os.path.isdir(full):
                     for inner in os.listdir(full):
                         self.assertFalse(
@@ -137,15 +150,11 @@ class DownloadAndVerifyTest(unittest.TestCase):
                         )
 
 
-class OverlayShadowingTest(unittest.TestCase):
+class OverlayShadowingTest(_CachingTest):
     """Later zips in the manifest shadow earlier ones."""
 
     def test_second_zip_shadows_first(self):
-        with tempfile.TemporaryDirectory() as host, \
-                tempfile.TemporaryDirectory() as cache:
-            os.environ['XDG_CACHE_HOME'] = cache
-            self.addCleanup(os.environ.pop, 'XDG_CACHE_HOME', None)
-
+        with tempfile.TemporaryDirectory() as host:
             base_zip = os.path.join(host, 'base.zip')
             mods_zip = os.path.join(host, 'mods.zip')
             base_adler = _make_zip(base_zip, {
@@ -171,15 +180,11 @@ class OverlayShadowingTest(unittest.TestCase):
             self.assertIn(b'Slime', rm.open('monsters.xml'))
 
 
-class CacheReuseTest(unittest.TestCase):
+class CacheReuseTest(_CachingTest):
     """Re-running update_from on an unchanged manifest is cheap."""
 
     def test_second_call_does_not_redownload(self):
-        with tempfile.TemporaryDirectory() as host, \
-                tempfile.TemporaryDirectory() as cache:
-            os.environ['XDG_CACHE_HOME'] = cache
-            self.addCleanup(os.environ.pop, 'XDG_CACHE_HOME', None)
-
+        with tempfile.TemporaryDirectory() as host:
             zip_path = os.path.join(host, 'TMW.zip')
             adler = _make_zip(zip_path, {'a.txt': b'one'})
             _write_manifest(os.path.join(host, 'resources.xml'), [
@@ -226,13 +231,10 @@ class OverrideDirTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as data:
             with open(os.path.join(data, 'monsters.xml'), 'wb') as f:
                 f.write(b'<monsters/>')
-            os.environ['TMW_CLIENT_DATA'] = data
-            try:
+            with mock.patch.dict(os.environ, {'TMW_CLIENT_DATA': data}):
                 rm = ResourceManager()
                 self.assertTrue(rm.ready())
                 self.assertTrue(rm.exists('monsters.xml'))
-            finally:
-                del os.environ['TMW_CLIENT_DATA']
 
 
 class HostNormalizationTest(unittest.TestCase):
@@ -242,7 +244,6 @@ class HostNormalizationTest(unittest.TestCase):
         # We only verify the normalizer; no network call. Using a host
         # that won't resolve guarantees we'd hit a clean error if the
         # normalizer fed the URL through.
-        from tmw_mcp.resources import ResourceManager
         self.assertEqual(
             ResourceManager._normalize_host('updates.example.com'),
             'http://updates.example.com/',
@@ -257,7 +258,7 @@ class HostNormalizationTest(unittest.TestCase):
         )
 
 
-class ManifestRejectsBadRootTest(unittest.TestCase):
+class ManifestRejectsBadRootTest(_CachingTest):
     """resources.xml with the wrong root tag should raise a clear error."""
 
     def test_wrong_root_tag(self):

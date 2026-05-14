@@ -42,11 +42,11 @@ from .bot import (
     write_log, write_chat_log, write_npc_log, write_state,
     format_event, is_wakeup_event, run_auto_behaviors,
     execute_command, is_safe_message,
-    LOG_FILE,
 )
 from .items import item_name
 from .maps import load_collision
 from .monsters import monster_name
+from .paths import bot_log_path, mcp_startup_log_path
 
 log = logging.getLogger('mcp_server')
 
@@ -744,7 +744,7 @@ def _connect_game():
 
     log.info('Logging in as %s...', creds['username'])
 
-    with open(LOG_FILE, 'w') as f:
+    with open(bot_log_path(), 'w') as f:
         f.write('')
 
     client = GameClient(creds['server'], creds['port'])
@@ -1406,7 +1406,7 @@ def main() -> None:
 
     # Also log to a file so we can diagnose startup failures
     # (stderr may not be visible when launched by Claude Code)
-    _fh = logging.FileHandler(os.path.join(CLIENT_DIR, 'mcp_startup.log'), mode='w')
+    _fh = logging.FileHandler(mcp_startup_log_path(), mode='w')
     _fh.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(name)s: %(message)s',
                                        datefmt='%H:%M:%S'))
     logging.getLogger().addHandler(_fh)

@@ -80,6 +80,14 @@ Precedence: explicit CLI flags > env vars > `credentials.json` > built-in defaul
 
 Set `TMW_DASHBOARD_PORT=8765` (or pass `--dashboard-port 8765` to any CLI entry) and open `http://127.0.0.1:8765/`. The dashboard shows a live tile map (collision grid, beings, floor items, walk path, hunt zone, aggro discs), HP/SP/EXP bars, hunt status, NPC dialog state, inventory, and a chat tail. Localhost-only, no auth, no extra dependencies (stdlib HTTP + SSE + vanilla JS).
 
+## Where things live
+
+| Kind                  | Path                                                       |
+| --------------------- | ---------------------------------------------------------- |
+| Downloaded game data  | `${XDG_CACHE_HOME:-~/.cache}/tmw-mcp/`                     |
+| Logs and session state| `${XDG_STATE_HOME:-~/.local/state}/tmw-mcp/`               |
+| Credentials file      | `./credentials.json` in your cwd (mode 0o600, gitignored)  |
+
 ## Console scripts
 
 `pip install` creates four entry points:
@@ -100,7 +108,7 @@ git clone https://github.com/bjorn/tmw-mcp
 cd tmw-mcp
 python3 -m venv .venv
 .venv/bin/pip install -e .
-.venv/bin/python -m unittest discover -s tests   # 66 tests
+.venv/bin/python -m unittest discover   # from repo root; 66 tests
 ```
 
 For development against local client-data:

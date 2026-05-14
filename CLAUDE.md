@@ -15,14 +15,18 @@ All runtime code lives in the `tmw_mcp/` package. The only third-party dependenc
 python3 -m venv .venv
 .venv/bin/pip install -e .
 
-# Run a single test
+# Run the whole suite (from repo root; loads tests/__init__.py which
+# redirects XDG_STATE_HOME and XDG_CACHE_HOME to tempdirs so tests
+# don't pollute your real ~/.local/state/tmw-mcp).
+.venv/bin/python -m unittest discover
+
+# Run a single test (still from repo root)
 .venv/bin/python -m unittest tests.test_dashboard
 .venv/bin/python -m unittest tests.test_shim_proxy
 .venv/bin/python -m unittest tests.test_follow
 .venv/bin/python -m unittest tests.test_ranged_combat
-
-# Run the whole suite
-.venv/bin/python -m unittest discover -s tests
+.venv/bin/python -m unittest tests.test_resources
+.venv/bin/python -m unittest tests.test_credentials
 
 # Console scripts (created by ``pip install -e .``)
 tmw-mcp                                  # stdio MCP entry point (with self-restart shim)
@@ -84,7 +88,7 @@ When the game emits something interesting (chat, whisper, NPC dialog turn, comba
 - **Walk clamp.** The map server silently rejects walk requests beyond ~17 tiles. `game.py` clamps to 10 and reissues when the destination is further; do not remove the clamp.
 - **NPC dialog state machine.** Click NPC (`tmw_npc`) -> receive lines -> advance with `tmw_npc_next` -> when choices appear, select with `tmw_npc_choose` (1-based) -> close with `tmw_npc_close`. State lives in `npc_dialog`, `npc_waiting_next`, `npc_waiting_choice` on `GameClient`.
 - **Credentials.** `credentials.json` is mode 0o600 and gitignored. Never log it or commit it.
-- **Persistent logs.** `chat_history.log` and `npc_history.log` are append-only and grep-friendly; the bot relies on this to recover context across restarts. Do not rotate or truncate them as part of routine changes.
+- **Persistent logs.** `chat_history.log` and `npc_history.log` live under `${XDG_STATE_HOME:-~/.local/state}/tmw-mcp/` (see `tmw_mcp/paths.py`). They are append-only and grep-friendly; the bot relies on this to recover context across restarts. Do not rotate or truncate them as part of routine changes.
 
 ## Protocol source of truth
 

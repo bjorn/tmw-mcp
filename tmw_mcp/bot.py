@@ -9,9 +9,11 @@ Usage:
     python bot.py [--credentials FILE] [--verbose]
 
 Communication:
-    - Reads commands from: cmd.txt (consumed after reading)
-    - Writes output to: bot_log.txt (append)
-    - Writes state to: bot_state.txt (overwritten each tick)
+    - Reads commands from: ./cmd.txt (consumed after reading)
+    - Writes output to: ${XDG_STATE_HOME:-~/.local/state}/tmw-mcp/bot_log.txt (append)
+    - Writes state to: ${XDG_STATE_HOME:-~/.local/state}/tmw-mcp/bot_state.txt (overwritten each tick)
+    - Appends chat to: ${XDG_STATE_HOME:-~/.local/state}/tmw-mcp/chat_history.log
+    - Appends NPC dialog to: ${XDG_STATE_HOME:-~/.local/state}/tmw-mcp/npc_history.log
 """
 
 import json
@@ -21,13 +23,17 @@ import sys
 import time
 
 from .game import GameClient
+from .paths import (
+    bot_log_path,
+    bot_state_path,
+    chat_log_path,
+    npc_log_path,
+)
 
-_DIR = os.path.dirname(os.path.abspath(__file__))
-LOG_FILE = os.path.join(_DIR, 'bot_log.txt')
-STATE_FILE = os.path.join(_DIR, 'bot_state.txt')
-CMD_FILE = os.path.join(_DIR, 'cmd.txt')
-CHAT_LOG = os.path.join(_DIR, 'chat_history.log')
-NPC_LOG = os.path.join(_DIR, 'npc_history.log')
+# Command file stays in the user's cwd: the legacy file-driven bot mode
+# treats it as an inbox that humans (or another process) write to, so
+# burying it in ~/.local/state would just be unhelpful.
+CMD_FILE = 'cmd.txt'
 
 log = logging.getLogger('bot')
 
@@ -38,21 +44,21 @@ def write_log(msg: str, to_stderr: bool = False):
     line = f'[{timestamp}] {msg}'
     if to_stderr:
         print(line, file=sys.stderr)
-    with open(LOG_FILE, 'a') as f:
+    with open(bot_log_path(), 'a') as f:
         f.write(line + '\n')
 
 
 def write_chat_log(msg: str):
     """Append to persistent chat history (survives restarts)."""
     timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
-    with open(CHAT_LOG, 'a') as f:
+    with open(chat_log_path(), 'a') as f:
         f.write(f'[{timestamp}] {msg}\n')
 
 
 def write_npc_log(npc_name: str, msg: str):
     """Append to persistent NPC interaction history."""
     timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
-    with open(NPC_LOG, 'a') as f:
+    with open(npc_log_path(), 'a') as f:
         f.write(f'[{timestamp}] [{npc_name}] {msg}\n')
 
 
@@ -121,7 +127,7 @@ def write_state(client: GameClient):
         for row in view.split('\n'):
             lines.append(f'  {row}')
 
-    with open(STATE_FILE, 'w') as f:
+    with open(bot_state_path(), 'w') as f:
         f.write('\n'.join(lines) + '\n')
 
 
@@ -722,7 +728,7 @@ def main():
         logging.getLogger('net').setLevel(logging.WARNING)
 
     # Clear log
-    with open(LOG_FILE, 'w') as f:
+    with open(bot_log_path(), 'w') as f:
         f.write('')
 
     # Load credentials (env vars override the file).
