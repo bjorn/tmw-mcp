@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Claudius - TMW dashboard</title>
+    <link rel="stylesheet" href="/static/dashboard.css" />
+  </head>
+  <body>
+    <header id="topbar">
+      <h1>Claudius</h1>
+      <div id="connstate" class="conn-bad">disconnected</div>
+      <div id="meta">
+        <span id="meta-map">map: -</span>
+        <span id="meta-pos">pos: -</span>
+        <span id="meta-time">-</span>
+      </div>
+    </header>
+
+    <main>
+      <section id="left">
+        <div class="panel" id="char-panel">
+          <h2>Character</h2>
+          <div class="bar"><label>HP</label>
+            <div class="bar-track"><div id="hp-bar" class="bar-fill hp"></div></div>
+            <span id="hp-text">-</span>
+          </div>
+          <div class="bar"><label>SP</label>
+            <div class="bar-track"><div id="sp-bar" class="bar-fill sp"></div></div>
+            <span id="sp-text">-</span>
+          </div>
+          <div class="bar"><label>EXP</label>
+            <div class="bar-track"><div id="exp-bar" class="bar-fill exp"></div></div>
+            <span id="exp-text">-</span>
+          </div>
+          <div class="bar"><label>JOB</label>
+            <div class="bar-track"><div id="jobexp-bar" class="bar-fill jobexp"></div></div>
+            <span id="jobexp-text">-</span>
+          </div>
+          <div id="char-summary">
+            <span>level <b id="char-level">-</b>/<b id="char-joblevel">-</b></span>
+            <span>zeny <b id="char-zeny">-</b></span>
+            <span>weight <b id="char-weight">-</b></span>
+          </div>
+          <table id="stats-table">
+            <tr><th>STR</th><th>AGI</th><th>VIT</th><th>INT</th><th>DEX</th><th>LUK</th></tr>
+            <tr>
+              <td id="stat-str">-</td>
+              <td id="stat-agi">-</td>
+              <td id="stat-vit">-</td>
+              <td id="stat-int">-</td>
+              <td id="stat-dex">-</td>
+              <td id="stat-luk">-</td>
+            </tr>
+          </table>
+          <div id="auto-state"></div>
+        </div>
+
+        <div class="panel" id="hunt-panel">
+          <h2>Hunt</h2>
+          <div id="hunt-body">idle</div>
+        </div>
+
+        <div class="panel" id="follow-panel">
+          <h2>Follow</h2>
+          <div id="follow-body">idle</div>
+        </div>
+
+        <div class="panel" id="npc-panel">
+          <h2>NPC dialog</h2>
+          <div id="npc-body"><i>no dialog</i></div>
+        </div>
+
+        <div class="panel" id="inv-panel">
+          <h2>Inventory <span id="inv-count" class="sub"></span></h2>
+          <ol id="inv-list"></ol>
+        </div>
+      </section>
+
+      <section id="map-section">
+        <div class="panel" id="map-panel">
+          <h2>Map <span id="map-name-label" class="sub"></span></h2>
+          <canvas id="map-canvas" width="640" height="640"></canvas>
+          <div id="hover-info" class="sub">&nbsp;</div>
+        </div>
+
+        <div id="map-chat-splitter" class="splitter" role="separator"
+             aria-orientation="horizontal" aria-label="Resize chat panel"></div>
+
+        <div class="panel" id="chat-panel">
+          <h2>Chat <span id="chat-count" class="sub"></span></h2>
+          <ol id="chat-list"></ol>
+          <form id="op-form" autocomplete="off">
+            <input
+              id="op-input"
+              type="text"
+              maxlength="500"
+              placeholder="Say to Claudius (Enter to send)"
+            />
+            <button type="submit" id="op-send">Send</button>
+          </form>
+        </div>
+      </section>
+
+      <section id="right"></section>
+    </main>
+
+    <script src="/static/dashboard.js"></script>
+  </body>
+</html>
