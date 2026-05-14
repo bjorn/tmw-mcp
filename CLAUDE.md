@@ -90,6 +90,41 @@ When the game emits something interesting (chat, whisper, NPC dialog turn, comba
 - **Credentials.** `credentials.json` is mode 0o600 and gitignored. Never log it or commit it.
 - **Persistent logs.** `chat_history.log` and `npc_history.log` live under `${XDG_STATE_HOME:-~/.local/state}/tmw-mcp/` (see `tmw_mcp/paths.py`). They are append-only and grep-friendly; the bot relies on this to recover context across restarts. Do not rotate or truncate them as part of routine changes.
 
+## Releasing to PyPI
+
+```bash
+# One-time: install build tooling in the working venv.
+.venv/bin/pip install -e ".[dev]"
+
+# Bump tmw_mcp/__init__.py:__version__ and pyproject.toml:[project].version
+# to match. Commit. Tag with the version (e.g. ``git tag v0.1.0``).
+
+# Build sdist and wheel into dist/. MANIFEST.in pulls tests/ and
+# scripts/ into the sdist; dashboard_static/ is package-data on the
+# wheel.
+rm -rf dist build *.egg-info
+.venv/bin/python -m build
+
+# Static metadata check; long_description / classifiers / urls.
+.venv/bin/twine check dist/*
+
+# Optional: smoke-test the wheel in a throwaway venv before uploading.
+F=$(mktemp -d) && python3 -m venv "$F/.venv" && \
+    "$F/.venv/bin/pip" install dist/tmw_mcp-*.whl && \
+    "$F/.venv/bin/tmw-mcp-cli" --help && rm -rf "$F"
+
+# Upload to TestPyPI first.
+.venv/bin/twine upload -r testpypi dist/*
+
+# When the install from TestPyPI works end-to-end, push to real PyPI.
+.venv/bin/twine upload dist/*
+
+# Finally push the tag.
+git push origin v0.1.0
+```
+
+`twine` reads ``~/.pypirc`` or ``TWINE_USERNAME``/``TWINE_PASSWORD`` env vars (use an API token starting with ``pypi-`` as the password, username ``__token__``).
+
 ## Protocol source of truth
 
 `../tmwa/tools/protocol.py` is the canonical packet definition that the upstream server compiles from. When adding or changing a packet, run `scripts/extract_packets.py` to refresh sizes rather than hand-editing `PACKET_SIZES` in `tmw_mcp/packets.py`. The script expects a sibling `../tmwa/` checkout. The TMW protocol is little-endian binary over three TCP servers: login (default 6901), char (6122), map (5122). Each packet starts with a u16 id.

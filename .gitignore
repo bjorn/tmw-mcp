@@ -1,12 +1,8 @@
 __pycache__/
 *.pyc
+
+# Local credentials (mode 0o600). Never commit.
 credentials.json
-chat_history.log
-npc_history.log
-mcp_startup.log
-mcp_shim_startup.log
-bot_log.txt
-bot_state.txt
 
 # Build artifacts
 build/
@@ -14,5 +10,11 @@ dist/
 *.egg-info/
 .venv/
 
-# Resource cache (downloaded zips from update host)
-.cache/
+# Stale log paths from before logs moved to XDG_STATE_HOME. Kept so
+# that running an old checkout in-place still ignores them.
+chat_history.log
+npc_history.log
+mcp_startup.log
+mcp_shim_startup.log
+bot_log.txt
+bot_state.txt

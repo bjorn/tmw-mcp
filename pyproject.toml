@@ -24,15 +24,23 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Games/Entertainment :: Role-Playing",
 ]
 dependencies = [
     "mcp>=1.0",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "build>=1.0",
+    "twine>=5.0",
+]
+
 [project.urls]
 Homepage = "https://github.com/bjorn/tmw-mcp"
 Issues = "https://github.com/bjorn/tmw-mcp/issues"
+Source = "https://github.com/bjorn/tmw-mcp"
 
 [project.scripts]
 tmw-mcp = "tmw_mcp.mcp_shim:main"
