@@ -194,6 +194,14 @@ def build_close_storage() -> bytes:
     return struct.pack('<H', 0x00f7)
 
 
+def build_client_quit() -> bytes:
+    """0x018a: CMSG_CLIENT_QUIT. Tells the map server we're closing the session
+    cleanly so it can drop the account-online entry immediately, letting us
+    re-login without the usual cache delay. Payload is a 2-byte 'unused' word.
+    """
+    return struct.pack('<HH', 0x018a, 0)
+
+
 def build_player_action(target_id: int, action: int) -> bytes:
     """0x0089: Perform action (attack, sit, stand).
     action: 0=attack, 7=continuous attack, 2=sit, 3=stand
@@ -832,6 +840,18 @@ class AttackRange:
 
 
 @dataclass
+class ArrowEquip:
+    """0x013c: Server notifies that an ammo item is now equipped.
+
+    Unlike weapons / armor, ammo equip does NOT produce a 0x00aa
+    EquipResult. The client must track ammo equip state from this
+    packet instead. *index* is ioff2 (inventory offset, matches the
+    key used in GameClient.inventory).
+    """
+    index: int = 0
+
+
+@dataclass
 class PartyInvited:
     """0x00fe: You're invited to join a party."""
     account_id: int = 0
@@ -1287,6 +1307,12 @@ def parse_packet(packet_id: int, data: bytes):
     elif packet_id == 0x013a:
         return AttackRange(
             attack_range=struct.unpack_from('<H', data, 2)[0],
+        )
+
+    elif packet_id == 0x013c:
+        # Arrow / ammo equip notify. Payload is ioff2 only.
+        return ArrowEquip(
+            index=struct.unpack_from('<H', data, 2)[0],
         )
 
     elif packet_id == 0x00fe:

@@ -52,6 +52,12 @@ from monsters import monster_name
 log = logging.getLogger('mcp_server')
 
 
+# Optional browser dashboard. Off by default; enable by passing
+# --dashboard-port PORT or setting TMW_DASHBOARD_PORT in the environment.
+DASHBOARD_PORT = 0
+_dashboard_server = None  # set in _connect_game() if DASHBOARD_PORT > 0
+
+
 # ---------------------------------------------------------------------------
 # Shared state between MCP async context and game thread
 # ---------------------------------------------------------------------------
@@ -73,8 +79,39 @@ state = SharedState()
 # Channel notification bridge (game thread -> async MCP)
 # ---------------------------------------------------------------------------
 
+# Set to True by run_daemon_mode() to redirect notifications to stdout JSON-RPC
+# instead of going through the in-process MCP session.
+SHIM_MODE = False
+_shim_stdout_lock = threading.Lock()
+
+
 def push_notification(content: str):
-    """Push a channel notification from the game thread."""
+    """Push a channel notification from the game thread.
+
+    In normal (FastMCP) mode this queues onto the asyncio loop, which forwards
+    it as a ``notifications/claude/channel`` MCP message. In ``--shim`` daemon
+    mode it writes a line-delimited JSON-RPC notification to stdout so the
+    parent shim process can forward it to the real MCP client.
+    """
+    if SHIM_MODE:
+        try:
+            msg = json.dumps({
+                'jsonrpc': '2.0',
+                'method': 'channel',
+                'params': {'text': content},
+            })
+        except Exception as e:
+            log.warning('Cannot encode notification: %s', e)
+            return
+        with _shim_stdout_lock:
+            try:
+                sys.stdout.write(msg + '\n')
+                sys.stdout.flush()
+                log.info('SHIM notify out: %s', content[:80])
+            except Exception as e:
+                log.warning('Failed to write shim notification: %s', e)
+        return
+
     if state.event_loop and state.notification_queue:
         state.event_loop.call_soon_threadsafe(
             state.notification_queue.put_nowait, content
@@ -121,7 +158,12 @@ def send_command(cmd_name: str, **kwargs) -> str:
 
 
 def drain_command_queue(client: GameClient):
-    """Process all pending MCP tool commands on the game thread."""
+    """Process all pending MCP tool commands on the game thread.
+
+    ``future`` may be ``None`` when an operator action (from the
+    dashboard) enqueues a fire-and-forget command; in that case we
+    log instead of propagating result/exception to any waiter.
+    """
     while not state.command_queue.empty():
         try:
             future, cmd_name, kwargs = state.command_queue.get_nowait()
@@ -129,9 +171,15 @@ def drain_command_queue(client: GameClient):
             break
         try:
             result = _execute_tool_command(client, cmd_name, kwargs)
-            future.set_result(result)
+            if future is not None:
+                future.set_result(result)
+            else:
+                log.info('Operator %s: %s', cmd_name, result)
         except Exception as e:
-            future.set_exception(e)
+            if future is not None:
+                future.set_exception(e)
+            else:
+                log.exception('Operator %s failed', cmd_name)
 
 
 def _execute_tool_command(client: GameClient, cmd: str, kw: dict) -> str:
@@ -298,27 +346,12 @@ def _execute_tool_command(client: GameClient, cmd: str, kw: dict) -> str:
         return 'Standing up'
 
     elif cmd == 'follow':
+        from bot import start_follow, stop_follow
         target = kw.get('target', '')
         if not target:
-            client._follow_target = 0
+            stop_follow(client)
             return 'Stopped following'
-        target_id = None
-        try:
-            target_id = int(target)
-        except ValueError:
-            for b in client.beings.values():
-                if b.name.lower() == target.lower():
-                    target_id = b.block_id
-                    break
-        if target_id:
-            client._follow_target = target_id
-            # Stop hunting to avoid conflict with follow
-            client._hunt_type = ''
-            client._hunt_home = None
-            name = client.beings.get(target_id)
-            name = name.name if name else f'#{target_id}'
-            return f'Following {name}'
-        return f'Cannot find player: {target}'
+        return start_follow(client, target)
 
     elif cmd == 'shop_buy':
         client.shop_buy(kw['npc_id'])
@@ -463,6 +496,14 @@ def game_loop():
         try:
             events = client.process_packets(timeout=0.2)
         except Exception as e:
+            # When _quit_rpc clears state.running and closes the socket,
+            # any in-flight process_packets() call on the game thread races
+            # the close and surfaces here as EBADF (or similar). That's
+            # planned shutdown, not a real disconnect, so don't alarm the
+            # user with a "Game connection lost" notification.
+            if not state.running:
+                log.info('Game socket closed during planned shutdown: %s', e)
+                break
             log.error('Game connection error: %s', e)
             push_notification(f'[ERROR] Game connection lost: {e}')
             state.running = False
@@ -533,8 +574,18 @@ def game_loop():
                     else:
                         nearby_kill_buffer[kill_name] = nearby_kill_buffer.get(kill_name, 0) + 1
 
-            # Push channel notification for interesting events
-            if is_wakeup_event(client, etype, data):
+            # Push channel notification for interesting events.
+            # Skip our own outgoing chat: the server echoes it back as 0x008d
+            # with our account_id, so it would otherwise round-trip into our
+            # own context. (Some echos arrive as 0x008e with block_id 0; check
+            # for both.) The dashboard chat tail still shows the message
+            # because that's fed off game.py's chat_log; only the upstream
+            # channel notification is suppressed.
+            is_own_chat = (
+                etype == 'chat'
+                and getattr(data, 'block_id', None) in (0, client.account_id)
+            )
+            if not is_own_chat and is_wakeup_event(client, etype, data):
                 notif_msg = msg
                 # Enrich combat notifications with HP info
                 if etype == 'action' and data.damage > 0:
@@ -546,6 +597,10 @@ def game_loop():
                     if not death_notified:
                         notif_msg = '[Death] You died!'
                         death_notified = True
+                        # Drop follow state: we can't chase anyone while dead.
+                        if client._follow_target_name:
+                            from bot import stop_follow
+                            stop_follow(client)
                     else:
                         notif_msg = None
                 if notif_msg:
@@ -654,9 +709,14 @@ def format_game_state(client: GameClient) -> str:
 # MCP Server + Tools
 # ---------------------------------------------------------------------------
 
-def ensure_session(ctx: Context):
-    """Capture the ServerSession and lazily connect to the game."""
-    if state.session_ref is None:
+def ensure_session(ctx):
+    """Capture the ServerSession (if any) and lazily connect to the game.
+
+    ``ctx`` is the FastMCP Context when called from a tool; in ``--shim``
+    daemon mode it is ``None``, because notifications go out on stdout JSON-RPC
+    rather than through a live MCP session.
+    """
+    if ctx is not None and state.session_ref is None:
         state.session_ref = ctx.session
     if state.client is None:
         _connect_game()
@@ -692,8 +752,70 @@ def _connect_game():
     state.game_thread = threading.Thread(target=game_loop, name='game-loop', daemon=True)
     state.game_thread.start()
 
-    # Start notification forwarder
-    state._forward_task = asyncio.create_task(notification_forwarder())
+    # Start notification forwarder (FastMCP mode only). In ``--shim`` daemon
+    # mode notifications are written to stdout as JSON-RPC, no asyncio task
+    # needed.
+    if not SHIM_MODE:
+        state._forward_task = asyncio.create_task(notification_forwarder())
+
+    # Optional browser dashboard.
+    global _dashboard_server
+    if DASHBOARD_PORT and _dashboard_server is None:
+        try:
+            from dashboard import DashboardServer, OperatorHooks, build_snapshot
+
+            # Operator hooks run on the dashboard HTTP thread. ``walk``
+            # and ``attack`` enqueue a command on ``state.command_queue``
+            # so the game thread processes them on its next tick: the
+            # same path tmw_walk and tmw_attack take. ``notify`` uses
+            # the existing push_notification bridge (which already does
+            # asyncio.call_soon_threadsafe back to the MCP event loop)
+            # so [Operator] lines land in Claude's conversation just
+            # like any other channel notification.
+
+            def _op_walk(x: int, y: int) -> None:
+                state.command_queue.put((None, 'walk', {'x': x, 'y': y}))
+
+            def _op_attack(being_id: int) -> None:
+                state.command_queue.put(
+                    (None, 'attack', {'target_id': being_id})
+                )
+
+            def _op_say(text: str) -> None:
+                state.command_queue.put((None, 'say', {'message': text}))
+
+            def _op_known_ids():
+                return list((client.beings or {}).keys())
+
+            def _op_notify(text: str) -> None:
+                # Also persist to chat_history.log so it survives daemon
+                # restarts and is visible to any tail-based observer.
+                # This is the primary delivery channel for [Operator]
+                # input now that the dashboard no longer broadcasts it
+                # publicly in-game.
+                try:
+                    write_chat_log(text)
+                except Exception:
+                    log.exception('write_chat_log for operator failed')
+                push_notification(text)
+
+            hooks = OperatorHooks(
+                walk=_op_walk,
+                attack=_op_attack,
+                say=_op_say,
+                notify=_op_notify,
+                known_being_ids=_op_known_ids,
+            )
+            _dashboard_server = DashboardServer.start(
+                port=DASHBOARD_PORT,
+                state_provider=lambda: build_snapshot(client, item_name),
+                op_hooks=hooks,
+            )
+            log.info('Dashboard available at http://127.0.0.1:%d/',
+                     _dashboard_server.port)
+        except Exception as e:
+            log.error('Failed to start dashboard on port %d: %s',
+                      DASHBOARD_PORT, e)
 
 
 @asynccontextmanager
@@ -711,6 +833,10 @@ async def lifespan(server: FastMCP):
             state._forward_task.cancel()
         if state.game_thread:
             state.game_thread.join(timeout=3.0)
+        global _dashboard_server
+        if _dashboard_server is not None:
+            _dashboard_server.stop()
+            _dashboard_server = None
         if state.client:
             state.client.disconnect()
         log.info('MCP server shut down')
@@ -1077,11 +1203,186 @@ def tmw_map(ctx: Context, radius: int = 10) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Shim (daemon) mode: line-delimited JSON-RPC over stdin/stdout
+# ---------------------------------------------------------------------------
+#
+# When launched with ``--shim`` the process does not speak MCP directly.
+# Instead a tiny JSON-RPC dialect lets a parent ``mcp_shim.py`` process
+# forward tool calls and channel notifications to the real MCP client.
+#
+# Requests (parent -> daemon), one JSON object per line:
+#   {"jsonrpc":"2.0","id":N,"method":"list_tools","params":{}}
+#   {"jsonrpc":"2.0","id":N,"method":"call_tool",
+#    "params":{"name":"tmw_say","arguments":{"message":"hi"}}}
+#   {"jsonrpc":"2.0","id":N,"method":"quit","params":{}}
+#
+# Responses (daemon -> parent), one JSON object per line, same id:
+#   {"jsonrpc":"2.0","id":N,"result":...}
+#   {"jsonrpc":"2.0","id":N,"error":{"code":...,"message":"..."}}
+#
+# Notifications (daemon -> parent), no id field:
+#   {"jsonrpc":"2.0","method":"channel","params":{"text":"[Chat] hi"}}
+
+
+def _tool_to_dict(tool) -> dict:
+    """Serialize a FastMCP Tool to the JSON shape the shim re-emits to MCP."""
+    out = {
+        'name': tool.name,
+        'description': tool.description or '',
+        'inputSchema': tool.parameters,
+    }
+    if tool.title:
+        out['title'] = tool.title
+    return out
+
+
+def _list_tools_rpc() -> list[dict]:
+    return [_tool_to_dict(t) for t in mcp._tool_manager.list_tools()]
+
+
+async def _call_tool_rpc(name: str, arguments: dict) -> str:
+    """Dispatch a tool call by name; return the tool's string result.
+
+    Tools that take a ``ctx`` parameter receive ``None``; ``ensure_session``
+    handles that case (it skips capturing a session and just lazy-connects).
+    """
+    tool = mcp._tool_manager.get_tool(name)
+    if tool is None:
+        raise ValueError(f'Unknown tool: {name}')
+    result = await tool.run(arguments or {}, context=None, convert_result=False)
+    # Tool functions return plain strings; force-stringify defensively.
+    return result if isinstance(result, str) else str(result)
+
+
+def _quit_rpc() -> str:
+    """Send CMSG_QUIT to the map server, drain briefly, shut the game thread.
+
+    The caller will exit the process after the response is written.
+    """
+    client = state.client
+    state.running = False  # ask the game loop to stop
+    if client is not None:
+        try:
+            client.quit_cleanly(drain_seconds=0.3)
+        except Exception as e:
+            log.warning('quit_cleanly failed: %s', e)
+    if state.game_thread is not None:
+        state.game_thread.join(timeout=2.0)
+    global _dashboard_server
+    if _dashboard_server is not None:
+        try:
+            _dashboard_server.stop()
+        except Exception:
+            pass
+        _dashboard_server = None
+    return 'ok'
+
+
+def _write_rpc(obj: dict) -> None:
+    line = json.dumps(obj, separators=(',', ':'))
+    with _shim_stdout_lock:
+        sys.stdout.write(line + '\n')
+        sys.stdout.flush()
+
+
+async def _dispatch_request(req: dict) -> dict | None:
+    """Process one JSON-RPC request. Returns the response dict, or None for
+    notifications (requests without an id)."""
+    req_id = req.get('id')
+    method = req.get('method')
+    params = req.get('params') or {}
+
+    if method == 'list_tools':
+        result = _list_tools_rpc()
+    elif method == 'call_tool':
+        name = params.get('name')
+        arguments = params.get('arguments') or {}
+        try:
+            result = await _call_tool_rpc(name, arguments)
+        except Exception as e:
+            log.exception('call_tool %s failed', name)
+            if req_id is None:
+                return None
+            return {
+                'jsonrpc': '2.0',
+                'id': req_id,
+                'error': {'code': -32000, 'message': str(e)},
+            }
+    elif method == 'quit':
+        result = _quit_rpc()
+    elif method == 'ping':
+        result = 'pong'
+    else:
+        if req_id is None:
+            return None
+        return {
+            'jsonrpc': '2.0',
+            'id': req_id,
+            'error': {
+                'code': -32601,
+                'message': f'Method not found: {method}',
+            },
+        }
+
+    if req_id is None:
+        return None
+    return {'jsonrpc': '2.0', 'id': req_id, 'result': result}
+
+
+async def run_daemon_mode() -> int:
+    """Run the JSON-RPC line protocol until stdin closes or 'quit' is handled.
+
+    Returns the desired process exit code.
+    """
+    global SHIM_MODE
+    SHIM_MODE = True
+
+    log.info('Daemon mode: starting JSON-RPC loop on stdin/stdout')
+
+    # Connect to the game eagerly so list_tools/call_tool work right away.
+    # If login fails we still want to surface the error: write an immediate
+    # notification, then keep accepting requests so the parent can decide.
+    try:
+        _connect_game()
+    except Exception as e:
+        log.exception('Game connect failed at daemon startup')
+        push_notification(f'[Bot] login failed: {e}')
+
+    loop = asyncio.get_running_loop()
+    reader = asyncio.StreamReader(loop=loop)
+    proto = asyncio.StreamReaderProtocol(reader, loop=loop)
+    await loop.connect_read_pipe(lambda: proto, sys.stdin)
+
+    quit_requested = False
+    while True:
+        line = await reader.readline()
+        if not line:
+            log.info('Daemon stdin closed; exiting')
+            break
+        try:
+            req = json.loads(line.decode('utf-8'))
+        except Exception as e:
+            log.warning('Bad JSON-RPC line: %s', e)
+            continue
+
+        method = req.get('method')
+        resp = await _dispatch_request(req)
+        if resp is not None:
+            _write_rpc(resp)
+        if method == 'quit':
+            quit_requested = True
+            break
+
+    return 0 if quit_requested else 0
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
 if __name__ == '__main__':
     import anyio
+    import argparse
     from mcp.server.stdio import stdio_server
 
     # Also log to a file so we can diagnose startup failures
@@ -1091,17 +1392,45 @@ if __name__ == '__main__':
                                        datefmt='%H:%M:%S'))
     logging.getLogger().addHandler(_fh)
 
-    log.info('MCP server process starting (pid=%d, cwd=%s)', os.getpid(), os.getcwd())
+    # Optional dashboard: --dashboard-port PORT or TMW_DASHBOARD_PORT env var.
+    _ap = argparse.ArgumentParser(description='TMW MCP server')
+    _ap.add_argument('--dashboard-port', type=int, default=0,
+                     help='Start the browser dashboard on 127.0.0.1:PORT '
+                          '(default: 0 = off; also honoured via '
+                          'TMW_DASHBOARD_PORT env)')
+    _ap.add_argument('--shim', action='store_true',
+                     help='Run in daemon mode: speak line-delimited JSON-RPC '
+                          'on stdin/stdout instead of MCP. Used by '
+                          'mcp_shim.py for the self-restart architecture.')
+    _cli_args, _ = _ap.parse_known_args()
+    DASHBOARD_PORT = _cli_args.dashboard_port or int(
+        os.environ.get('TMW_DASHBOARD_PORT', '0') or '0'
+    )
+    if DASHBOARD_PORT:
+        log.info('Dashboard will start on port %d once the game connects',
+                 DASHBOARD_PORT)
 
-    async def run_stdio_with_channel():
-        async with stdio_server() as (read_stream, write_stream):
-            init_options = mcp._mcp_server.create_initialization_options(
-                experimental_capabilities={'claude/channel': {}},
-            )
-            await mcp._mcp_server.run(read_stream, write_stream, init_options)
+    log.info('MCP server process starting (pid=%d, cwd=%s, shim=%s)',
+             os.getpid(), os.getcwd(), _cli_args.shim)
 
-    try:
-        anyio.run(run_stdio_with_channel)
-    except Exception:
-        log.exception('MCP server crashed')
-        raise
+    if _cli_args.shim:
+        try:
+            rc = anyio.run(run_daemon_mode)
+            sys.exit(rc or 0)
+        except Exception:
+            log.exception('Daemon mode crashed')
+            raise
+    else:
+
+        async def run_stdio_with_channel():
+            async with stdio_server() as (read_stream, write_stream):
+                init_options = mcp._mcp_server.create_initialization_options(
+                    experimental_capabilities={'claude/channel': {}},
+                )
+                await mcp._mcp_server.run(read_stream, write_stream, init_options)
+
+        try:
+            anyio.run(run_stdio_with_channel)
+        except Exception:
+            log.exception('MCP server crashed')
+            raise

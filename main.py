@@ -255,26 +255,11 @@ def run_interactive(client: GameClient):
                     print('  Stopped hunting.')
 
             elif cmd == 'follow':
+                from bot import start_follow, stop_follow
                 if args:
-                    target_id = None
-                    try:
-                        target_id = int(args)
-                    except ValueError:
-                        for b in client.beings.values():
-                            if b.name and b.name.lower() == args.lower():
-                                target_id = b.block_id
-                                break
-                    if target_id:
-                        client._follow_target = target_id
-                        client._hunt_type = ''
-                        client._hunt_home = None
-                        name = client.beings.get(target_id)
-                        name = name.name if name else f'#{target_id}'
-                        print(f'  Following {name}')
-                    else:
-                        print(f'  Cannot find player: {args}')
+                    print('  ' + start_follow(client, args))
                 else:
-                    client._follow_target = 0
+                    stop_follow(client)
                     print('  Stopped following.')
 
             elif cmd == 'pickup':
@@ -344,6 +329,9 @@ def main():
                         help='Path to credentials JSON file')
     parser.add_argument('--verbose', '-v', action='store_true',
                         help='Verbose logging')
+    parser.add_argument('--dashboard-port', type=int, default=0,
+                        help='Start the browser dashboard on 127.0.0.1:PORT '
+                             '(default: 0 = off)')
     args = parser.parse_args()
 
     setup_logging(args.verbose)
@@ -382,7 +370,51 @@ def main():
         client.process_packets(timeout=0.2)
         client.send_ping()
 
-    run_interactive(client)
+    # Optional dashboard.
+    dashboard = None
+    if args.dashboard_port:
+        from dashboard import DashboardServer, OperatorHooks, build_snapshot
+        from items import item_name
+
+        # In interactive mode there's no MCP session, so operator
+        # notifications just print. Walks and attacks go straight to
+        # the game client; the interactive loop is single-threaded so
+        # we accept the small race window.
+        def _op_walk(x: int, y: int) -> None:
+            client.walk_path(x, y)
+
+        def _op_attack(being_id: int) -> None:
+            client.attack(being_id, continuous=True)
+            client._auto_attack_target = being_id
+
+        def _op_say(text: str) -> None:
+            client.say(text)
+
+        def _op_notify(text: str) -> None:
+            print(text)
+
+        def _op_known_ids():
+            return list((client.beings or {}).keys())
+
+        hooks = OperatorHooks(
+            walk=_op_walk,
+            attack=_op_attack,
+            say=_op_say,
+            notify=_op_notify,
+            known_being_ids=_op_known_ids,
+        )
+        dashboard = DashboardServer.start(
+            port=args.dashboard_port,
+            state_provider=lambda: build_snapshot(client, item_name),
+            op_hooks=hooks,
+        )
+        print(f'Dashboard: http://127.0.0.1:{dashboard.port}/')
+
+    try:
+        run_interactive(client)
+    finally:
+        if dashboard is not None:
+            dashboard.stop()
 
 
 if __name__ == '__main__':

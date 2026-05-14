@@ -90,6 +90,7 @@ from packets import (
     PlayerStatusChange,
     BeingEffect,
     AttackRange,
+    ArrowEquip,
     PartyInvited,
     build_party_message,
     build_party_leave,
@@ -162,6 +163,23 @@ SP_NAMES = {
     SP_FLEE1: 'flee1', SP_FLEE2: 'flee2', SP_CRITICAL: 'critical',
     SP_JOBLEVEL: 'job_level', SP_GM: 'gm_level',
 }
+
+
+def _chat_kind(message: str) -> str:
+    """Classify a public-chat line for the dashboard.
+
+    The server folds many message types into the same 0x008e/0x008d
+    packets: plain public chat, "Server : ..." admin announcements,
+    and (rarely) text the player typed themselves. We only get the
+    final flattened string, so this is a prefix sniff.
+    """
+    # Server announcements use a "Server : ..." prefix server-side.
+    if message.startswith('Server :') or message.startswith('Server:'):
+        return 'server'
+    # Channel-tagged messages (e.g. "#general : foo").
+    if message.startswith('#'):
+        return 'channel'
+    return 'say'
 
 
 @dataclass
@@ -272,6 +290,10 @@ class GameClient:
         # Chat log
         self.chat_log: list[str] = []
         self.whisper_log: list[tuple[str, str]] = []
+        # Structured chat history for the dashboard. Each entry is a dict
+        # with keys 'ts' (float wallclock), 'kind' (str), and 'text' (str).
+        # Populated in parallel with chat_log; trimmed in lockstep.
+        self.chat_entries: list[dict] = []
         self.online_list: list = []
         # Party members: account_id -> name
         self.party_members: dict[int, str] = {}
@@ -297,6 +319,23 @@ class GameClient:
         self._auto_attack_target: int = 0
         self._hunt_type: str = ''
         self._hunt_home: tuple[int, int] | None = None
+        # Follow mode is keyed by target name so it survives map transitions
+        # (the block_id may change when a player warps to a new map server).
+        # ``_follow_target_id`` is a cache of the currently-resolved being.
+        # ``_follow_state`` is one of: idle / following / waiting / warping.
+        # ``_follow_last_seen_*`` track the most recent visible position so
+        # the bot can walk onto the warp tile the target stepped on.
+        self._follow_target_name: str = ''
+        self._follow_target_id: int = 0
+        self._follow_state: str = 'idle'
+        self._follow_last_seen_at: float = 0.0
+        self._follow_last_seen_pos: tuple[int, int] | None = None
+        self._follow_last_seen_map: str = ''
+        # Seconds we wait for the target to reappear before giving up.
+        self._follow_timeout: float = 10.0
+        # Legacy alias: some external code still reads _follow_target as an
+        # int. We keep it in sync with _follow_target_id so the dashboard's
+        # ``auto.follow_target`` field stays meaningful.
         self._follow_target: int = 0
         self._board_target: int = 0
         self._attack_range: int = 1
@@ -612,6 +651,7 @@ class GameClient:
 
         elif isinstance(pkt, ChatMessage):
             self.chat_log.append(pkt.message)
+            self._append_chat_entry(pkt.message, _chat_kind(pkt.message))
             if len(self.chat_log) > 200:
                 self.chat_log = self.chat_log[-100:]
             return ('chat', pkt)
@@ -624,12 +664,16 @@ class GameClient:
 
         elif isinstance(pkt, PartyMessage):
             self.chat_log.append(f'[party] {pkt.message}')
+            self._append_chat_entry(f'[party] {pkt.message}', 'party')
             if len(self.chat_log) > 200:
                 self.chat_log = self.chat_log[-100:]
             return ('party_chat', pkt)
 
         elif isinstance(pkt, WhisperMessage):
             self.whisper_log.append((pkt.sender, pkt.message))
+            self._append_chat_entry(
+                f'[whisper from {pkt.sender}] {pkt.message}', 'whisper'
+            )
             if len(self.whisper_log) > 200:
                 self.whisper_log = self.whisper_log[-100:]
             return ('whisper', pkt)
@@ -639,6 +683,7 @@ class GameClient:
 
         elif isinstance(pkt, GmChat):
             self.chat_log.append('[GM] ' + pkt.message)
+            self._append_chat_entry('[GM] ' + pkt.message, 'gm')
             return ('gm_chat', pkt)
 
         elif isinstance(pkt, BeingNameResponse):
@@ -726,11 +771,26 @@ class GameClient:
             if pkt.success and pkt.index in self.inventory:
                 item = self.inventory[pkt.index]
                 if item.equipped:
-                    # Was equipped, now unequipped
+                    # Was equipped, now unequipped.
                     item.equipped = 0
+                    # If a weapon came off, fall back to melee range. The
+                    # server normally re-sends 0x013a; this is a safety
+                    # net for when the packet is missed or arrives late.
+                    if pkt.equip_point & 0x0002:  # EPOS::WEAPON
+                        self._attack_range = 1
                 else:
-                    # Was unequipped, now equipped
+                    # Was unequipped, now equipped.
                     item.equipped = pkt.equip_point
+                    # If a weapon went on, seed _attack_range from the
+                    # item DB so a stale value from a previous weapon
+                    # can't cause melee-style auto-walk. The server's
+                    # 0x013a (AttackRange) will override this with the
+                    # authoritative value, including arrow bonuses.
+                    if pkt.equip_point & 0x0002:
+                        from items import item_attack_range
+                        ar = item_attack_range(item.name_id)
+                        if ar:
+                            self._attack_range = ar
             return ('equip_result', pkt)
 
         elif isinstance(pkt, ItemUseResult):
@@ -833,6 +893,20 @@ class GameClient:
             self._attack_range = pkt.attack_range
             return ('attack_range', pkt)
 
+        elif isinstance(pkt, ArrowEquip):
+            # tmwAthena does not send 0x00aa EquipResult for ammo. The
+            # ARROW slot bit (EPOS::ARROW = 0x8000) is what the equipped
+            # field for armor / weapons would use to encode "currently in
+            # the ammo slot". Track it that way so consumers can ask
+            # "is this item equipped?" uniformly.
+            if pkt.index in self.inventory:
+                # Clear any previously equipped ammo (only one ammo at a time).
+                for item in self.inventory.values():
+                    if item.equipped & 0x8000:
+                        item.equipped &= ~0x8000
+                self.inventory[pkt.index].equipped |= 0x8000
+            return ('arrow_equip', pkt)
+
         elif isinstance(pkt, PartyInvited):
             return ('party_invited', pkt)
 
@@ -869,6 +943,17 @@ class GameClient:
     # Player actions
     # ------------------------------------------------------------------
 
+    def _append_chat_entry(self, text: str, kind: str) -> None:
+        """Append a structured chat entry alongside chat_log.
+
+        Stamps wallclock time on arrival so the dashboard can render
+        per-message timestamps. Keeps the same trimming policy as
+        ``chat_log`` (cap 200, trim to last 100).
+        """
+        self.chat_entries.append({'ts': time.time(), 'kind': kind, 'text': text})
+        if len(self.chat_entries) > 200:
+            self.chat_entries = self.chat_entries[-100:]
+
     def say(self, message: str):
         """Send a chat message.
 
@@ -878,8 +963,21 @@ class GameClient:
         self.map_conn.send_packet(build_chat(message))
 
     def whisper(self, target: str, message: str):
-        """Send a private message."""
+        """Send a private message.
+
+        The server does not echo outgoing whispers back to the sender
+        (only the recipient receives a 0x0097 packet; the sender just
+        gets a 0x0098 delivery-status). To keep the dashboard chat tail
+        symmetric with incoming whispers, append a synthetic entry to
+        ``chat_entries`` (kind ``whisper_out``) and mirror it in
+        ``chat_log`` so anything that pages through chat history sees it.
+        """
         self.map_conn.send_packet(build_whisper(target, message))
+        line = f'[whisper to {target}] {message}'
+        self.chat_log.append(line)
+        if len(self.chat_log) > 200:
+            self.chat_log = self.chat_log[-100:]
+        self._append_chat_entry(line, 'whisper_out')
 
     def request_online_list(self):
         """Request the list of online players from the server."""
@@ -1230,3 +1328,34 @@ class GameClient:
         for conn in (self.map_conn, self.char_conn, self.login_conn):
             if conn:
                 conn.close()
+
+    def quit_cleanly(self, drain_seconds: float = 0.3):
+        """Send CMSG_QUIT (0x018a) to the map server, briefly drain the socket
+        so the server has a chance to reply with SMSG_MAP_QUIT_RESPONSE
+        (0x018b), then close all connections.
+
+        Sending CMSG_QUIT clears the server-side account-online entry right
+        away, so a fresh login can happen immediately. Without it the server
+        keeps the session cached for several seconds and the next login is
+        rejected as "already logged in".
+        """
+        from packets import build_client_quit
+
+        if self.map_conn:
+            try:
+                self.map_conn.send_packet(build_client_quit())
+            except Exception:
+                # The socket may already be half-closed. Best effort only.
+                pass
+            # Drain briefly so the server can flush the quit response and
+            # release the session entry. We don't care what comes back, we
+            # only want the TCP FIN-ack round-trip to happen.
+            deadline = time.time() + max(0.0, drain_seconds)
+            while time.time() < deadline:
+                try:
+                    pkt = self.map_conn.recv_packet_nonblock(timeout=0.05)
+                    if pkt is None:
+                        break
+                except Exception:
+                    break
+        self.disconnect()

@@ -283,24 +283,10 @@ def execute_command(client: GameClient, cmd: str):
 
     elif action == 'follow':
         if args:
-            # Find player by name or ID
-            target_id = None
-            try:
-                target_id = int(args)
-            except ValueError:
-                for b in client.beings.values():
-                    if b.name.lower() == args.lower():
-                        target_id = b.block_id
-                        break
-            if target_id:
-                client._follow_target = target_id
-                name = client.beings.get(target_id)
-                name = name.name if name else f'#{target_id}'
-                write_log(f'Following {name}')
-            else:
-                write_log(f'Cannot find player: {args}')
+            result = start_follow(client, args)
+            write_log(result)
         else:
-            client._follow_target = 0
+            stop_follow(client)
             write_log('Stopped following')
 
     elif action == 'quit':
@@ -448,6 +434,176 @@ def is_wakeup_event(client: GameClient, etype: str, data) -> bool:
     return False
 
 
+# ---------------------------------------------------------------------------
+# Follow mode (lives here so the legacy file-based bot.py and the MCP server
+# share the exact same implementation).
+# ---------------------------------------------------------------------------
+
+
+def _resolve_follow_target(client: GameClient, name: str) -> int:
+    """Return the closest visible block_id for the given player name, or 0.
+
+    Identity continuity: if the previously-locked id is still visible AND
+    its current name matches, prefer it over any other same-named player.
+    Otherwise pick the spatially closest match.
+    """
+    locked = client._follow_target_id
+    if locked and locked in client.beings:
+        cur = client.beings[locked]
+        if (cur.name or '').lower() == name.lower():
+            return locked
+    name_lc = name.lower()
+    px, py = client.player.x, client.player.y
+    best = 0
+    best_dist = 1 << 30
+    for bid, b in client.beings.items():
+        if bid == client.account_id:
+            continue
+        if (b.name or '').lower() != name_lc:
+            continue
+        d = abs(b.x - px) + abs(b.y - py)
+        if d < best_dist:
+            best_dist = d
+            best = bid
+    return best
+
+
+def start_follow(client: GameClient, name_or_id: str) -> str:
+    """Begin following ``name_or_id``. Returns a one-line status string."""
+    # Try numeric id first, then resolve a being's name from that id so the
+    # follow state is name-keyed even if the operator gave us a block_id.
+    resolved_name = ''
+    try:
+        bid = int(name_or_id)
+        b = client.beings.get(bid)
+        if b and b.name:
+            resolved_name = b.name
+    except ValueError:
+        resolved_name = name_or_id.strip()
+    if not resolved_name:
+        return f'Cannot find player: {name_or_id}'
+
+    client._follow_target_name = resolved_name
+    client._follow_target_id = _resolve_follow_target(client, resolved_name)
+    client._follow_last_seen_map = client.player.map_name
+    client._follow_last_seen_at = time.time()
+    # Stop hunting so the two auto-behaviours don't fight for the path.
+    client._hunt_type = ''
+    client._hunt_home = None
+    if client._follow_target_id:
+        b = client.beings[client._follow_target_id]
+        client._follow_state = 'following'
+        client._follow_last_seen_pos = (b.x, b.y)
+        client._follow_target = client._follow_target_id
+        return f'Following {b.name or resolved_name}'
+    # Target not yet visible: stay armed and wait for them to show up.
+    client._follow_state = 'waiting'
+    client._follow_last_seen_pos = None
+    client._follow_target = 0
+    return f'Following {resolved_name} (waiting for them to appear)'
+
+
+def stop_follow(client: GameClient) -> None:
+    """Clear all follow state."""
+    client._follow_target_name = ''
+    client._follow_target_id = 0
+    client._follow_state = 'idle'
+    client._follow_last_seen_pos = None
+    client._follow_last_seen_map = ''
+    client._follow_last_seen_at = 0.0
+    client._follow_target = 0
+
+
+def _tick_follow(client: GameClient, tick_count: int) -> None:
+    """One tick of follow logic. Called from run_auto_behaviors.
+
+    States:
+      * following: target visible on our map; chase to within 3 tiles.
+      * warping: target stepped onto a warp tile, we've sent ourselves
+        after them and are waiting for our own map change.
+      * waiting: target out of sight (just out of view, or on another
+        map). Re-resolve on each tick; time out after
+        ``_follow_timeout`` seconds.
+
+    Map changes are detected by comparing ``client.player.map_name`` with
+    ``_follow_last_seen_map``: when they diverge, we reset spatial state
+    and drop back to waiting on the new map until the target reappears.
+    """
+    name = client._follow_target_name
+    state = client._follow_state
+    now = time.time()
+
+    # Did our own map change since the last tick? If so, drop any per-map
+    # caches and start re-searching by name on the new map.
+    cur_map = client.player.map_name
+    if cur_map != client._follow_last_seen_map:
+        client._follow_last_seen_map = cur_map
+        client._follow_target_id = 0
+        client._follow_last_seen_pos = None
+        client._follow_target = 0
+        # Treat the bot's own warp as fresh contact: refresh the seen-at
+        # clock so the timeout doesn't fire mid-transition.
+        client._follow_last_seen_at = now
+        client._follow_state = 'waiting'
+        state = 'waiting'
+
+    # Try to resolve the target by name on every tick; this is the cheap
+    # part of robustness across portal flickers.
+    bid = _resolve_follow_target(client, name)
+    if bid:
+        target = client.beings[bid]
+        client._follow_target_id = bid
+        client._follow_target = bid
+        client._follow_last_seen_pos = (target.x, target.y)
+        client._follow_last_seen_at = now
+        client._follow_state = 'following'
+        # Only push a fresh walk every ~1.6s (8 ticks); the walk packet
+        # is heavy and the server walks tile-by-tile anyway.
+        if tick_count % 8 == 0:
+            px, py = client.player.x, client.player.y
+            dx = abs(target.x - px)
+            dy = abs(target.y - py)
+            if dx > 3 or dy > 3:
+                tx = target.x + (1 if px > target.x else -1 if px < target.x else 0)
+                ty = target.y + (1 if py > target.y else -1 if py < target.y else 0)
+                client.walk_to(tx, ty)
+        return
+
+    # Target is not currently visible.
+    client._follow_target_id = 0
+    client._follow_target = 0
+    last_pos = client._follow_last_seen_pos
+    # If they vanished right next to a warp tile and we know where it
+    # was, walk onto that tile so the server warps us behind them.
+    if state == 'following' and last_pos is not None:
+        # Use the map collision data we already cache in maps.py.
+        try:
+            from maps import load_collision
+            cmap = load_collision(cur_map)
+        except Exception:
+            cmap = None
+        on_warp = bool(cmap and cmap.is_warp(last_pos[0], last_pos[1]))
+        if on_warp:
+            client._follow_state = 'warping'
+            # Walk onto the warp tile. Server will move us to the
+            # destination map; the map-change handler resets state.
+            client.walk_to(last_pos[0], last_pos[1])
+            return
+        # Otherwise they just moved out of view; sit tight and poll.
+        client._follow_state = 'waiting'
+        return
+
+    # Timeout handling: if the target stays missing for too long, give up.
+    if now - client._follow_last_seen_at > client._follow_timeout:
+        write_log(
+            f'[Follow] target {name} not seen in '
+            f'{int(client._follow_timeout)} seconds, giving up'
+        )
+        stop_follow(client)
+        return
+    # Stay in the current waiting/warping state.
+
+
 def run_auto_behaviors(client: GameClient, tick_count: int):
     """Run automated behaviors: auto-attack, hunt, follow, board."""
     # Yield to pickup queue — don't walk/attack while picking up items
@@ -510,7 +666,14 @@ def run_auto_behaviors(client: GameClient, tick_count: int):
                     best_dist = dist
         if best:
             client._auto_attack_target = best.block_id
-            client.walk_to(best.x, best.y)
+            # Walk toward, but stop at attack range. Otherwise a ranged
+            # hunter would charge straight onto the target tile before the
+            # auto-attack logic refines the path on the next tick.
+            sx = max(-1, min(1, best.x - px))
+            sy = max(-1, min(1, best.y - py))
+            dest_x = best.x - sx * (attack_range - 1)
+            dest_y = best.y - sy * (attack_range - 1)
+            client.walk_to(dest_x, dest_y)
         else:
             # Pick up nearby items first (queue all in radius)
             picked = False
@@ -541,21 +704,11 @@ def run_auto_behaviors(client: GameClient, tick_count: int):
         client.map_conn.send_packet(build_npc_close(board_target))
         client.map_conn.send_packet(build_npc_click(board_target))
 
-    # Follow: stay within 3 tiles of target player
-    follow_target = client._follow_target
-    if follow_target and tick_count % 8 == 0:
-        if follow_target in client.beings:
-            target = client.beings[follow_target]
-            px, py = client.player.x, client.player.y
-            dx = abs(target.x - px)
-            dy = abs(target.y - py)
-            if dx > 3 or dy > 3:
-                tx = target.x + (1 if px > target.x else -1 if px < target.x else 0)
-                ty = target.y + (1 if py > target.y else -1 if py < target.y else 0)
-                client.walk_to(tx, ty)
-        else:
-            client._follow_target = 0
-            write_log('[Follow target gone]')
+    # Follow: stay within 3 tiles of target player, handling map transitions.
+    # Runs every tick (~0.2s) so we can react to the target disappearing
+    # near a warp tile within a single map step.
+    if client._follow_target_name:
+        _tick_follow(client, tick_count)
 
 
 def main():
