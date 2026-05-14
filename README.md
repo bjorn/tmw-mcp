@@ -73,6 +73,7 @@ Other hosts can still call every other `tmw_*` tool exactly the same way; they j
 | `TMW_WORLD`             | World name (blank for default).                                         |
 | `TMW_DASHBOARD_PORT`    | Bind the browser dashboard on `127.0.0.1:PORT`. Off by default.         |
 | `TMW_CLIENT_DATA`       | Skip the update-host download and read game data from this directory. Useful for development against a checked-out `tmwa-client-data`. |
+| `TMW_CREDENTIALS_FILE`  | Absolute path to a `credentials.json`. Useful when your MCP host runs `tmw-mcp` from a cwd that doesn't contain one. |
 
 Precedence: explicit CLI flags > env vars > `credentials.json` > built-in defaults.
 

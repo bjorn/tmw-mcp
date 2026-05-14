@@ -728,18 +728,17 @@ def _connect_game():
 
     from .credentials import load_credentials, DEFAULT_FILE
 
-    # Prefer a credentials.json next to the working dir, fall back to one
-    # in the package dir for legacy installs. Env vars override either.
+    # Look for credentials.json next to the working dir; load_credentials
+    # itself promotes TMW_CREDENTIALS_FILE over whatever path we pass.
     cwd_file = os.path.abspath(DEFAULT_FILE)
-    pkg_file = os.path.join(CLIENT_DIR, DEFAULT_FILE)
-    path = cwd_file if os.path.exists(cwd_file) else \
-        (pkg_file if os.path.exists(pkg_file) else None)
+    path = cwd_file if os.path.exists(cwd_file) else None
     creds = load_credentials(path)
     if not creds.get('username') or not creds.get('password'):
         raise RuntimeError(
             'No credentials. Set TMW_USERNAME and TMW_PASSWORD (and any '
-            'other TMW_* env vars), or provide a credentials.json. Run '
-            '``tmw-mcp-register`` to create an account.'
+            'other TMW_* env vars), set TMW_CREDENTIALS_FILE to a JSON '
+            'path, or drop a credentials.json in the working directory. '
+            'Run ``tmw-mcp-register`` to create an account.'
         )
 
     log.info('Logging in as %s...', creds['username'])

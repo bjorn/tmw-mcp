@@ -21,6 +21,7 @@ from tmw_mcp.credentials import load_credentials
 _TMW_VARS = (
     'TMW_USERNAME', 'TMW_PASSWORD', 'TMW_SERVER', 'TMW_PORT',
     'TMW_CHAR_SLOT', 'TMW_CHAR_NAME', 'TMW_GENDER', 'TMW_WORLD',
+    'TMW_CREDENTIALS_FILE',
 )
 
 
@@ -101,6 +102,26 @@ class FilePlusEnvTest(unittest.TestCase):
         creds = load_credentials('/nonexistent/path.json')
         # Default server still resolves; no exception.
         self.assertEqual(creds['server'], 'server.themanaworld.org')
+
+
+class CredentialsFileEnvTest(unittest.TestCase):
+    """``TMW_CREDENTIALS_FILE`` overrides the path argument."""
+
+    def setUp(self) -> None:
+        _clear_env()
+        self.addCleanup(_clear_env)
+
+    def test_env_file_wins_over_path_arg(self):
+        with tempfile.TemporaryDirectory() as d:
+            path_a = os.path.join(d, 'a.json')
+            path_b = os.path.join(d, 'b.json')
+            with open(path_a, 'w') as f:
+                json.dump({'username': 'from_a'}, f)
+            with open(path_b, 'w') as f:
+                json.dump({'username': 'from_b'}, f)
+            os.environ['TMW_CREDENTIALS_FILE'] = path_b
+            creds = load_credentials(path_a)
+            self.assertEqual(creds['username'], 'from_b')
 
 
 class OverridesWinTest(unittest.TestCase):

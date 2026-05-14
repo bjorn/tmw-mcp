@@ -24,6 +24,10 @@ Env vars (all optional):
 * ``TMW_CHAR_NAME``
 * ``TMW_GENDER`` (``M`` or ``F``)
 * ``TMW_WORLD`` (optional world tag, blank for default)
+* ``TMW_CREDENTIALS_FILE`` (absolute path to a credentials.json; wins
+  over any path the caller passes, and lets an MCP host config point
+  at a file outside the user's cwd without resorting to a wrapper
+  script)
 """
 
 from __future__ import annotations
@@ -61,11 +65,16 @@ def load_credentials(path: str | None = None, **overrides) -> dict:
     """Return a credentials dict assembled from env, file, and overrides.
 
     ``path`` is a JSON file path; if None or the file doesn't exist,
-    that layer is skipped silently. ``overrides`` keys (e.g. ``user``,
+    that layer is skipped silently. ``TMW_CREDENTIALS_FILE`` in the
+    environment overrides ``path``. ``overrides`` keys (e.g. ``user``,
     ``password``, ``server``) win over everything else; pass ``None``
     or ``''`` to mean "no override at this layer".
     """
     out = dict(_DEFAULTS)
+
+    file_env = os.environ.get('TMW_CREDENTIALS_FILE')
+    if file_env:
+        path = file_env
 
     if path and os.path.exists(path):
         try:
@@ -108,6 +117,8 @@ def load_credentials(path: str | None = None, **overrides) -> dict:
 def password_for_safety_check(path: str | None = None) -> str | None:
     """Return the configured password, if any, for outbound-message
     leak detection. Used by :func:`tmw_mcp.bot.is_safe_message`.
+
+    Honours ``TMW_CREDENTIALS_FILE`` via :func:`load_credentials`.
     """
     if path is None:
         path = DEFAULT_FILE if os.path.exists(DEFAULT_FILE) else None
