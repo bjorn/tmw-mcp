@@ -11,11 +11,13 @@ Flow:
 
 import logging
 import struct
+import threading
 import time
 from dataclasses import dataclass, field
 
 from .monsters import monster_name
 from .net import Connection
+from .resources import default_manager
 from .packets import (
     # Builders
     build_login_register,
@@ -354,6 +356,31 @@ class GameClient:
         suffix = '_' + gender.upper()
         return self.login(username + suffix, password)
 
+    def _kick_resource_download(self, host_url: str) -> None:
+        """Fire off a background thread to populate the resource overlay.
+
+        We don't block login on this: the overlay just lights up
+        asynchronously, and data lookups (item names, maps, monster
+        names) seamlessly start returning real values once it's ready.
+        Failures are logged and otherwise non-fatal; the bot can still
+        play, it just sees ``item#NNN`` and synthetic species names.
+        """
+        if not host_url:
+            return
+        rm = default_manager()
+        if rm.override_dir:
+            return  # Dev mode: TMW_CLIENT_DATA points at a checkout.
+
+        def _run() -> None:
+            try:
+                rm.update_from(host_url)
+            except Exception as e:
+                log.warning('Resource update from %s failed: %s', host_url, e)
+
+        t = threading.Thread(target=_run, name='tmw-resource-update',
+                             daemon=True)
+        t.start()
+
     def login(self, username: str, password: str) -> LoginSuccess | LoginError:
         """Connect to login server and authenticate."""
         self.login_conn = Connection(self.server, self.login_port)
@@ -365,6 +392,7 @@ class GameClient:
             if isinstance(result, UpdateHost):
                 self.update_host = result.url
                 log.info('Update host: %s', self.update_host)
+                self._kick_resource_download(self.update_host)
                 continue
             elif isinstance(result, LoginSuccess):
                 self.login_id1 = result.login_id1

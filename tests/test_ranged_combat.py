@@ -316,6 +316,19 @@ class EquipFallbackTest(unittest.TestCase):
     the auto-attack still knows the bow is ranged.
     """
 
+    def setUp(self) -> None:
+        # The items module normally lazy-loads from the resource overlay
+        # (zip files downloaded from the update host). In tests we have
+        # no overlay, so stuff the Bow's metadata directly.
+        from tmw_mcp import items as items_mod
+        items_mod._reset_for_tests()
+        items_mod._name_cache[BOW_ID] = 'Bow'
+        items_mod._meta_cache[BOW_ID] = {
+            'name': 'Bow', 'attack_range': 5, 'type': 'equip-2hand',
+        }
+        items_mod._loaded = True
+        self.addCleanup(items_mod._reset_for_tests)
+
     def test_bow_equip_without_013a_uses_xml_attack_range(self):
         c = make_client_at(50, 50)
         add_inventory(c, ioff2=4, name_id=BOW_ID)

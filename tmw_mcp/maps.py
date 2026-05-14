@@ -1,17 +1,17 @@
 """
 TMX map collision parser.
 
-Reads TMX (Tiled) map files from the client-data repository and extracts
-the collision layer to determine walkable tiles.
+Reads TMX (Tiled) map files from the ResourceManager (zip overlay
+populated from the update host), or, if ``TMW_CLIENT_DATA`` is set,
+from that directory. Extracts the collision layer to determine
+walkable tiles and the object layer for warp rectangles.
 """
 
 import heapq
 import math
-import os
 import xml.etree.ElementTree as ET
 
-CLIENT_DATA_PATH = os.path.join(os.path.dirname(__file__), '..', '..', 'client-data')
-MAPS_PATH = os.path.join(CLIENT_DATA_PATH, 'maps')
+from .resources import default_manager
 
 
 class CollisionMap:
@@ -140,17 +140,22 @@ _cache: dict[str, CollisionMap] = {}
 def load_collision(map_name: str) -> CollisionMap | None:
     """Load collision data for a map.
 
-    map_name should be like '029-1' (without .tmx extension).
+    map_name should be like '029-1' (without .tmx extension). Returns
+    None if the resource overlay is empty (no update host fetched yet,
+    no override dir) or the map is missing.
     """
     if map_name in _cache:
         return _cache[map_name]
 
-    tmx_path = os.path.join(MAPS_PATH, map_name + '.tmx')
-    if not os.path.exists(tmx_path):
+    rm = default_manager()
+    if not rm.ready():
+        return None
+    try:
+        data = rm.open(f'maps/{map_name}.tmx')
+    except FileNotFoundError:
         return None
 
-    tree = ET.parse(tmx_path)
-    root = tree.getroot()
+    root = ET.fromstring(data)
 
     map_width = int(root.get('width', 0))
     map_height = int(root.get('height', 0))
@@ -202,3 +207,8 @@ def load_collision(map_name: str) -> CollisionMap | None:
     cmap = CollisionMap(map_name, map_width, map_height, collision_data, warps)
     _cache[map_name] = cmap
     return cmap
+
+
+def _reset_for_tests() -> None:
+    """Drop the collision cache. Used by tests; not part of the API."""
+    _cache.clear()
