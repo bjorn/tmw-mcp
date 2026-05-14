@@ -14,9 +14,9 @@ import struct
 import time
 from dataclasses import dataclass, field
 
-from monsters import monster_name
-from net import Connection
-from packets import (
+from .monsters import monster_name
+from .net import Connection
+from .packets import (
     # Builders
     build_login_register,
     build_char_server_connect,
@@ -787,7 +787,7 @@ class GameClient:
                     # 0x013a (AttackRange) will override this with the
                     # authoritative value, including arrow bonuses.
                     if pkt.equip_point & 0x0002:
-                        from items import item_attack_range
+                        from .items import item_attack_range
                         ar = item_attack_range(item.name_id)
                         if ar:
                             self._attack_range = ar
@@ -1021,7 +1021,7 @@ class GameClient:
 
     def walk_path(self, x: int, y: int, callback=None):
         """Walk to (x,y) using A* pathfinding. Calls callback(success, x, y) on completion."""
-        from maps import load_collision
+        from .maps import load_collision
         self._cancel_path()
         self._path_goal = (x, y)
         self._path_callback = callback
@@ -1339,7 +1339,7 @@ class GameClient:
         keeps the session cached for several seconds and the next login is
         rejected as "already logged in".
         """
-        from packets import build_client_quit
+        from .packets import build_client_quit
 
         if self.map_conn:
             try:

@@ -16,14 +16,15 @@ import time
 import unittest
 from unittest import mock
 
-# Allow running from project root or client/.
-CLIENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if CLIENT_DIR not in sys.path:
-    sys.path.insert(0, CLIENT_DIR)
+# Allow running from anywhere: put the repo root on sys.path so
+# ``import tmw_mcp`` resolves to the in-tree package.
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
 
-import bot
-from dashboard import build_snapshot
-from game import Being, GameClient
+from tmw_mcp import bot
+from tmw_mcp.dashboard import build_snapshot
+from tmw_mcp.game import Being, GameClient
 
 
 def _fresh_client(map_name: str = '008-1', px: int = 50, py: int = 50) -> GameClient:
@@ -162,10 +163,10 @@ class TickFollowTest(unittest.TestCase):
         fake_cmap.is_warp = lambda x, y: (x, y) == (24, 36)
 
         del c.beings[2291295]
-        with mock.patch('bot.load_collision', return_value=fake_cmap, create=True):
-            # ``bot._tick_follow`` does ``from maps import load_collision``
+        with mock.patch('tmw_mcp.bot.load_collision', return_value=fake_cmap, create=True):
+            # ``bot._tick_follow`` does ``from .maps import load_collision``
             # at runtime, so patch the maps module instead.
-            with mock.patch('maps.load_collision', return_value=fake_cmap):
+            with mock.patch('tmw_mcp.maps.load_collision', return_value=fake_cmap):
                 bot._tick_follow(c, tick_count=0)
 
         self.assertEqual(c._follow_state, 'warping')

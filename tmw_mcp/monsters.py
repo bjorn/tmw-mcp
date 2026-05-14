@@ -5,7 +5,7 @@ Monster name lookup from client-data monsters.xml.
 import os
 import xml.etree.ElementTree as ET
 
-CLIENT_DATA_PATH = os.path.join(os.path.dirname(__file__), '..', 'client-data')
+CLIENT_DATA_PATH = os.path.join(os.path.dirname(__file__), '..', '..', 'client-data')
 
 _name_cache: dict[int, str] = {}
 

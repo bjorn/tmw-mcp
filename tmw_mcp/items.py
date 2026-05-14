@@ -9,7 +9,7 @@ waiting for server status updates.
 import os
 import xml.etree.ElementTree as ET
 
-CLIENT_DATA_PATH = os.path.join(os.path.dirname(__file__), '..', 'client-data')
+CLIENT_DATA_PATH = os.path.join(os.path.dirname(__file__), '..', '..', 'client-data')
 
 _name_cache: dict[int, str] = {}
 # id -> {'name': str, 'attack_range': int | None, 'type': str | None}

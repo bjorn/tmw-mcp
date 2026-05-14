@@ -729,7 +729,7 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _serve_map(self, name: str):
         # Reuse the bot's existing TMX parser. No new dependency.
-        from maps import load_collision
+        from .maps import load_collision
 
         # Names like '008-1' or '008-1.tmx' both fine; strip extension.
         if name.endswith('.tmx'):

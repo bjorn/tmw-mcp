@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tmw-mcp"
+version = "0.1.0"
+description = "A Python client for The Mana World, exposed as an MCP server so an AI agent can play the game."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Thorbjorn Lindeijer", email = "b.lindeijer@gmail.com" },
+]
+keywords = ["mcp", "model-context-protocol", "themanaworld", "tmw", "tmwathena", "game", "ai-agent"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Games/Entertainment :: Role-Playing",
+]
+dependencies = [
+    "mcp>=1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/bjorn/tmw-mcp"
+Issues = "https://github.com/bjorn/tmw-mcp/issues"
+
+[project.scripts]
+tmw-mcp = "tmw_mcp.mcp_shim:main"
+tmw-mcp-server = "tmw_mcp.mcp_server:main"
+tmw-mcp-cli = "tmw_mcp.main:main"
+tmw-mcp-register = "tmw_mcp.register:main"
+
+[tool.setuptools.packages.find]
+include = ["tmw_mcp*"]
+
+[tool.setuptools.package-data]
+tmw_mcp = ["dashboard_static/*"]

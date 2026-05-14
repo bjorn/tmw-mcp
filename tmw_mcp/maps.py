@@ -10,7 +10,7 @@ import math
 import os
 import xml.etree.ElementTree as ET
 
-CLIENT_DATA_PATH = os.path.join(os.path.dirname(__file__), '..', 'client-data')
+CLIENT_DATA_PATH = os.path.join(os.path.dirname(__file__), '..', '..', 'client-data')
 MAPS_PATH = os.path.join(CLIENT_DATA_PATH, 'maps')
 
 

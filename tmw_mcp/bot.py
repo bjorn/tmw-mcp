@@ -20,7 +20,7 @@ import os
 import sys
 import time
 
-from game import GameClient
+from .game import GameClient
 
 _DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_FILE = os.path.join(_DIR, 'bot_log.txt')
@@ -75,7 +75,7 @@ def write_state(client: GameClient):
         '',
         'nearby_beings:',
     ]
-    from monsters import monster_name
+    from .monsters import monster_name
     for b in client.nearby_beings(radius=30):
         name = b.name or monster_name(b.species)
         hp_str = f' HP:{b.hp}/{b.max_hp}' if b.max_hp > 0 else ''
@@ -84,12 +84,12 @@ def write_state(client: GameClient):
     lines.append('inventory:')
     for idx in sorted(client.inventory.keys()):
         item = client.inventory[idx]
-        from items import item_name
+        from .items import item_name
         lines.append(f'  [{idx}] {item_name(item.name_id)} x{item.amount}')
     lines.append('')
     lines.append('floor_items:')
     for item in client.nearby_items(radius=15):
-        from items import item_name
+        from .items import item_name
         lines.append(f'  [{item.block_id}] {item_name(item.name_id)} x{item.amount} at ({item.x},{item.y})')
     lines.append('')
     lines.append('npc_dialog:')
@@ -111,7 +111,7 @@ def write_state(client: GameClient):
     for sender, msg in client.whisper_log[-5:]:
         lines.append(f'  [whisper from {sender}] {msg}')
     # Minimap
-    from maps import load_collision
+    from .maps import load_collision
     cmap = load_collision(p.map_name)
     if cmap:
         lines.append('')
@@ -214,7 +214,7 @@ def execute_command(client: GameClient, cmd: str):
         write_log(f'Picking up #{item_id}')
 
     elif action == 'equip':
-        from packets import build_equip_item
+        from .packets import build_equip_item
         index = int(args)
         client.map_conn.send_packet(build_equip_item(index))
         write_log(f'Equipping item at index {index}')
@@ -230,7 +230,7 @@ def execute_command(client: GameClient, cmd: str):
 
     elif action == 'close':
         # Force send close packet regardless of client state
-        from packets import build_npc_close
+        from .packets import build_npc_close
         npc_id = int(args) if args else client.npc_id
         client.map_conn.send_packet(build_npc_close(npc_id))
         client.npc_waiting_close = False
@@ -253,7 +253,7 @@ def execute_command(client: GameClient, cmd: str):
 
     elif action == 'stat':
         # Increase a stat: stat STR, stat AGI, stat VIT, stat INT, stat DEX, stat LUK
-        from packets import build_stat_increase
+        from .packets import build_stat_increase
         stat_map = {
             'str': 0x000d, 'agi': 0x000e, 'vit': 0x000f,
             'int': 0x0010, 'dex': 0x0011, 'luk': 0x0012,
@@ -266,7 +266,7 @@ def execute_command(client: GameClient, cmd: str):
             write_log(f'Unknown stat: {args}. Use: str, agi, vit, int, dex, luk')
 
     elif action == 'map':
-        from maps import load_collision
+        from .maps import load_collision
         radius = int(args) if args else 10
         cmap = load_collision(client.player.map_name)
         if cmap:
@@ -366,7 +366,7 @@ def format_event(client: GameClient, etype: str, data) -> str | None:
     elif etype == 'trade_item_add':
         if data.name_id == 0:
             return f'[Trade] Other party added {data.amount} GP'
-        from items import item_name
+        from .items import item_name
         return f'[Trade] Other party added {data.amount}x {item_name(data.name_id)}'
     elif etype == 'trade_ok':
         who = 'you' if data.who == 0 else 'other party'
@@ -378,7 +378,7 @@ def format_event(client: GameClient, etype: str, data) -> str | None:
     elif etype == 'shop_choice':
         return f'[Shop NPC #{data.npc_id} - use tmw_shop_buy or tmw_shop_sell]'
     elif etype == 'shop_buy_list':
-        from items import item_name
+        from .items import item_name
         lines = ['[Shop Buy List]']
         for item in data.items:
             lines.append(f'  {item_name(item.name_id)} (#{item.name_id}) - {item.price} GP')
@@ -578,7 +578,7 @@ def _tick_follow(client: GameClient, tick_count: int) -> None:
     if state == 'following' and last_pos is not None:
         # Use the map collision data we already cache in maps.py.
         try:
-            from maps import load_collision
+            from .maps import load_collision
             cmap = load_collision(cur_map)
         except Exception:
             cmap = None
@@ -686,7 +686,7 @@ def run_auto_behaviors(client: GameClient, tick_count: int):
             # Avoid warp tiles to prevent accidentally leaving the map
             if not picked and tick_count % 12 == 0:
                 import random
-                from maps import load_collision
+                from .maps import load_collision
                 roam_radius = 8
                 cmap = load_collision(client.player.map_name)
                 for _ in range(10):  # retry up to 10 times to find a safe tile
@@ -700,7 +700,7 @@ def run_auto_behaviors(client: GameClient, tick_count: int):
     # Board: keep trying to click a dock NPC until we warp
     board_target = client._board_target
     if board_target and tick_count % 15 == 0:
-        from packets import build_npc_close, build_npc_click
+        from .packets import build_npc_close, build_npc_click
         client.map_conn.send_packet(build_npc_close(board_target))
         client.map_conn.send_packet(build_npc_click(board_target))
 

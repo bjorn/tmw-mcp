@@ -18,14 +18,14 @@ import sys
 import time
 import unittest
 
-CLIENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if CLIENT_DIR not in sys.path:
-    sys.path.insert(0, CLIENT_DIR)
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
 
-import packets
-from bot import run_auto_behaviors
-from game import Being, GameClient
-from packets import (
+from tmw_mcp import packets
+from tmw_mcp.bot import run_auto_behaviors
+from tmw_mcp.game import Being, GameClient
+from tmw_mcp.packets import (
     InventoryItem,
     PACKET_SIZES,
     build_equip_item,
@@ -253,7 +253,7 @@ class AutoAttackRangedWalkTest(unittest.TestCase):
         # verify (build_walk encodes dest in a 3-byte position1 blob).
         walk_pkt = next(p for p in c.map_conn.sent if
                         struct.unpack_from('<H', p, 0)[0] == 0x0085)
-        from packets import decode_pos1
+        from tmw_mcp.packets import decode_pos1
         dx, dy, _ = decode_pos1(walk_pkt[2:5])
         self.assertNotEqual((dx, dy), (60, 50),
                             'walk must not target the same tile as the monster')
@@ -285,7 +285,7 @@ class AutoAttackRangedWalkTest(unittest.TestCase):
         run_auto_behaviors(c, tick_count=0)
         walk_pkt = next(p for p in c.map_conn.sent if
                         struct.unpack_from('<H', p, 0)[0] == 0x0085)
-        from packets import decode_pos1
+        from tmw_mcp.packets import decode_pos1
         dx, dy, _ = decode_pos1(walk_pkt[2:5])
         # With range=1, dest = target.x - sx*0 = target.x. Walking onto
         # the target tile is the legacy melee behavior; the server
@@ -303,7 +303,7 @@ class RunAutoBehaviorsModuleTest(unittest.TestCase):
     """
 
     def test_run_auto_behaviors_is_module_level_callable(self):
-        import bot as bot_module
+        from tmw_mcp import bot as bot_module
         self.assertTrue(
             callable(getattr(bot_module, 'run_auto_behaviors', None)),
             'bot.run_auto_behaviors must exist as a module-level function',
@@ -418,7 +418,7 @@ class HuntModeRunsTest(unittest.TestCase):
         walk_pkts = [p for p in c.map_conn.sent
                      if struct.unpack_from('<H', p, 0)[0] == 0x0085]
         self.assertEqual(len(walk_pkts), 1)
-        from packets import decode_pos1
+        from tmw_mcp.packets import decode_pos1
         dx, dy, _ = decode_pos1(walk_pkts[0][2:5])
         self.assertNotEqual((dx, dy), (60, 50),
                             'hunt mode must not walk onto a ranged target')

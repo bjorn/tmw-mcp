@@ -29,25 +29,24 @@ logging.basicConfig(
 )
 logging.getLogger('net').setLevel(logging.WARNING)
 
-# Add client dir to path
+# Package directory (also used as the writable runtime dir for logs/state).
 CLIENT_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, CLIENT_DIR)
 os.chdir(CLIENT_DIR)
 
 from mcp.server.fastmcp import FastMCP, Context
 from mcp.types import JSONRPCNotification, JSONRPCMessage
 from mcp.shared.message import SessionMessage
 
-from game import GameClient
-from bot import (
+from .game import GameClient
+from .bot import (
     write_log, write_chat_log, write_npc_log, write_state,
     format_event, is_wakeup_event, run_auto_behaviors,
     execute_command, is_safe_message,
     LOG_FILE,
 )
-from items import item_name
-from maps import load_collision
-from monsters import monster_name
+from .items import item_name
+from .maps import load_collision
+from .monsters import monster_name
 
 log = logging.getLogger('mcp_server')
 
@@ -253,7 +252,7 @@ def _execute_tool_command(client: GameClient, cmd: str, kw: dict) -> str:
         return 'NPC: next'
 
     elif cmd == 'close':
-        from packets import build_npc_close
+        from .packets import build_npc_close
         npc_id = kw.get('npc_id') or client.npc_id
         client.map_conn.send_packet(build_npc_close(npc_id))
         client.npc_dialog_open = False
@@ -283,7 +282,7 @@ def _execute_tool_command(client: GameClient, cmd: str, kw: dict) -> str:
         return f'NPC: input {kw["value"]}'
 
     elif cmd == 'trade_request':
-        from packets import build_trade_request
+        from .packets import build_trade_request
         target = kw['target']
         being = None
         for b in client.beings.values():
@@ -296,17 +295,17 @@ def _execute_tool_command(client: GameClient, cmd: str, kw: dict) -> str:
         return f'Trade requested with {being.name}'
 
     elif cmd == 'trade_accept':
-        from packets import build_trade_response
+        from .packets import build_trade_response
         client.map_conn.send_packet(build_trade_response(True))
         return 'Trade accepted'
 
     elif cmd == 'trade_reject':
-        from packets import build_trade_response
+        from .packets import build_trade_response
         client.map_conn.send_packet(build_trade_response(False))
         return 'Trade rejected'
 
     elif cmd == 'trade_add_item':
-        from packets import build_trade_add
+        from .packets import build_trade_add
         idx = kw['index']
         item = client.inventory.get(idx)
         if not item:
@@ -317,23 +316,23 @@ def _execute_tool_command(client: GameClient, cmd: str, kw: dict) -> str:
         return f'Added {amount}x {item_name(item.name_id)} to trade'
 
     elif cmd == 'trade_add_zeny':
-        from packets import build_trade_add
+        from .packets import build_trade_add
         amount = kw['amount']
         client.map_conn.send_packet(build_trade_add(0, amount))
         return f'Added {amount} GP to trade'
 
     elif cmd == 'trade_lock':
-        from packets import build_trade_lock
+        from .packets import build_trade_lock
         client.map_conn.send_packet(build_trade_lock())
         return 'Trade locked (ready)'
 
     elif cmd == 'trade_commit':
-        from packets import build_trade_commit
+        from .packets import build_trade_commit
         client.map_conn.send_packet(build_trade_commit())
         return 'Trade committed'
 
     elif cmd == 'trade_cancel':
-        from packets import build_trade_cancel
+        from .packets import build_trade_cancel
         client.map_conn.send_packet(build_trade_cancel())
         return 'Trade cancelled'
 
@@ -346,7 +345,7 @@ def _execute_tool_command(client: GameClient, cmd: str, kw: dict) -> str:
         return 'Standing up'
 
     elif cmd == 'follow':
-        from bot import start_follow, stop_follow
+        from .bot import start_follow, stop_follow
         target = kw.get('target', '')
         if not target:
             stop_follow(client)
@@ -372,7 +371,7 @@ def _execute_tool_command(client: GameClient, cmd: str, kw: dict) -> str:
         return f'Selling {kw["count"]}x from slot {kw["index"]}'
 
     elif cmd == 'equip':
-        from packets import build_equip_item, build_unequip_item
+        from .packets import build_equip_item, build_unequip_item
         index = kw['index']
         item = client.inventory.get(index)
         if item and item.equipped:
@@ -395,7 +394,7 @@ def _execute_tool_command(client: GameClient, cmd: str, kw: dict) -> str:
         return f'Emote {kw["emote_id"]}'
 
     elif cmd == 'stat':
-        from packets import build_stat_increase
+        from .packets import build_stat_increase
         stat_map = {
             'str': 0x000d, 'agi': 0x000e, 'vit': 0x000f,
             'int': 0x0010, 'dex': 0x0011, 'luk': 0x0012,
@@ -424,7 +423,7 @@ def _execute_tool_command(client: GameClient, cmd: str, kw: dict) -> str:
         return f'Will auto-exit ferry after {kw["bells"]} bell(s)'
 
     elif cmd == 'drop':
-        from packets import build_drop_item
+        from .packets import build_drop_item
         index = kw['index']
         amount = kw.get('amount', 0)
         item = client.inventory.get(index)
@@ -599,7 +598,7 @@ def game_loop():
                         death_notified = True
                         # Drop follow state: we can't chase anyone while dead.
                         if client._follow_target_name:
-                            from bot import stop_follow
+                            from .bot import stop_follow
                             stop_follow(client)
                     else:
                         notif_msg = None
@@ -762,7 +761,7 @@ def _connect_game():
     global _dashboard_server
     if DASHBOARD_PORT and _dashboard_server is None:
         try:
-            from dashboard import DashboardServer, OperatorHooks, build_snapshot
+            from .dashboard import DashboardServer, OperatorHooks, build_snapshot
 
             # Operator hooks run on the dashboard HTTP thread. ``walk``
             # and ``attack`` enqueue a command on ``state.command_queue``
@@ -1380,7 +1379,15 @@ async def run_daemon_mode() -> int:
 # Entry point
 # ---------------------------------------------------------------------------
 
-if __name__ == '__main__':
+def main() -> None:
+    """Console script entry point.
+
+    Parses CLI flags (--shim, --dashboard-port), then either runs the
+    daemon-mode JSON-RPC dialect (for use behind mcp_shim) or speaks MCP
+    over stdio directly. Honours TMW_DASHBOARD_PORT as a fallback.
+    """
+    global DASHBOARD_PORT
+
     import anyio
     import argparse
     from mcp.server.stdio import stdio_server
@@ -1434,3 +1441,7 @@ if __name__ == '__main__':
         except Exception:
             log.exception('MCP server crashed')
             raise
+
+
+if __name__ == '__main__':
+    main()

@@ -18,12 +18,12 @@ import sys
 import textwrap
 import unittest
 
-CLIENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if CLIENT_DIR not in sys.path:
-    sys.path.insert(0, CLIENT_DIR)
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
 
-import mcp_shim
-from mcp_shim import DaemonProxy, DaemonRestartingError
+from tmw_mcp import mcp_shim
+from tmw_mcp.mcp_shim import DaemonProxy, DaemonRestartingError
 
 
 # A polite fake daemon: replies "ok:<name>" to call_tool, exits cleanly on

@@ -12,9 +12,9 @@ import os
 import sys
 import time
 
-from bot import run_auto_behaviors
-from game import GameClient, Being, FloorItem
-from packets import (
+from .bot import run_auto_behaviors
+from .game import GameClient, Being, FloorItem
+from .packets import (
     BeingVisible, BeingMove, BeingSpawn, BeingRemove,
     BeingAction, ChatMessage, WhisperMessage, GmChat,
     NpcMessage, NpcNext, NpcClose, NpcChoice,
@@ -255,7 +255,7 @@ def run_interactive(client: GameClient):
                     print('  Stopped hunting.')
 
             elif cmd == 'follow':
-                from bot import start_follow, stop_follow
+                from .bot import start_follow, stop_follow
                 if args:
                     print('  ' + start_follow(client, args))
                 else:
@@ -373,8 +373,8 @@ def main():
     # Optional dashboard.
     dashboard = None
     if args.dashboard_port:
-        from dashboard import DashboardServer, OperatorHooks, build_snapshot
-        from items import item_name
+        from .dashboard import DashboardServer, OperatorHooks, build_snapshot
+        from .items import item_name
 
         # In interactive mode there's no MCP session, so operator
         # notifications just print. Walks and attacks go straight to

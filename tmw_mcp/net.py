@@ -10,7 +10,7 @@ import struct
 import time
 import logging
 
-from packets import PACKET_SIZES, parse_packet
+from .packets import PACKET_SIZES, parse_packet
 
 log = logging.getLogger(__name__)
 

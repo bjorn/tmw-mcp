@@ -52,7 +52,6 @@ logging.basicConfig(
 log = logging.getLogger('mcp_shim')
 
 CLIENT_DIR = os.path.dirname(os.path.abspath(__file__))
-DAEMON_ENTRY = os.path.join(CLIENT_DIR, 'mcp_server.py')
 
 # Escalation timings for tmw_restart (overridable by tests).
 QUIT_GRACE_SECONDS = 5.0
@@ -88,7 +87,10 @@ class DaemonProxy:
         env: dict[str, str] | None = None,
         notify_upstream: Any = None,
     ):
-        self.argv = argv or [sys.executable, DAEMON_ENTRY, '--shim']
+        # Spawn the daemon via ``python -m tmw_mcp.mcp_server --shim`` so the
+        # package layout works whether we're running from a source checkout
+        # or an installed PyPI package.
+        self.argv = argv or [sys.executable, '-m', 'tmw_mcp.mcp_server', '--shim']
         self.env = env if env is not None else os.environ.copy()
         # ``notify_upstream`` is a callable ``(text: str) -> Awaitable[None]``
         # invoked when the daemon emits a JSON-RPC notification, plus
@@ -516,7 +518,8 @@ async def run_shim(proxy: DaemonProxy | None = None) -> None:
 # Entry point
 # ---------------------------------------------------------------------------
 
-if __name__ == '__main__':
+def main() -> None:
+    """Console script entry point: run the self-restartable MCP shim."""
     import anyio
 
     # Mirror mcp_server.py: log startup failures to a file so we can diagnose
@@ -536,3 +539,7 @@ if __name__ == '__main__':
     except Exception:
         log.exception('MCP shim crashed')
         raise
+
+
+if __name__ == '__main__':
+    main()

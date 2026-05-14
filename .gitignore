@@ -4,3 +4,15 @@ credentials.json
 chat_history.log
 npc_history.log
 mcp_startup.log
+mcp_shim_startup.log
+bot_log.txt
+bot_state.txt
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+.venv/
+
+# Resource cache (downloaded zips from update host)
+.cache/

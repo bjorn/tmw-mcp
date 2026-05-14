@@ -16,8 +16,8 @@ import secrets
 import string
 import sys
 
-from game import GameClient
-from packets import LoginError, LoginSuccess, CharInfo, CharMapInfo
+from .game import GameClient
+from .packets import LoginError, LoginSuccess, CharInfo, CharMapInfo
 
 
 def generate_password(length: int = 16) -> str:
@@ -113,7 +113,7 @@ def main():
     # Create character if none exist
     if not client.characters:
         print(f'Creating character "{args.char_name}"...')
-        from packets import build_char_create
+        from .packets import build_char_create
         # Balanced starting stats: must sum to 30 (server default)
         stats = (5, 5, 5, 5, 5, 5)  # str, agi, vit, int, dex, luk
         client.char_conn.send_packet(

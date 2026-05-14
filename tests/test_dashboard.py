@@ -15,19 +15,20 @@ import time
 import unittest
 import urllib.request
 
-# Allow running from project root or client/.
-CLIENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if CLIENT_DIR not in sys.path:
-    sys.path.insert(0, CLIENT_DIR)
+# Allow running from anywhere: put the repo root on sys.path so
+# ``import tmw_mcp`` resolves to the in-tree package.
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
 
-from dashboard import (
+from tmw_mcp.dashboard import (
     AGGRO_RANGES,
     DashboardServer,
     OperatorHooks,
     StateBroadcaster,
     build_snapshot,
 )
-from game import GameClient
+from tmw_mcp.game import GameClient
 
 
 class _FakeBeing:

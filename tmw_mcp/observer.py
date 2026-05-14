@@ -8,8 +8,8 @@ import json
 import logging
 import time
 
-from game import GameClient, Being
-from packets import BeingVisible, BeingMove, BeingSpawn, BeingRemove, PlayerStop
+from .game import GameClient, Being
+from .packets import BeingVisible, BeingMove, BeingSpawn, BeingRemove, PlayerStop
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)s: %(message)s',
