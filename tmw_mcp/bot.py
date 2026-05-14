@@ -139,15 +139,11 @@ def read_commands() -> list[str]:
 
 
 def is_safe_message(msg: str) -> bool:
-    """Check that a message doesn't contain credentials."""
-    try:
-        with open('credentials.json') as f:
-            creds = json.load(f)
-        password = creds.get('password', '')
-        if password and password in msg:
-            return False
-    except (OSError, json.JSONDecodeError):
-        pass
+    """Check that a message doesn't accidentally leak the bot's password."""
+    from .credentials import password_for_safety_check
+    password = password_for_safety_check()
+    if password and password in msg:
+        return False
     return True
 
 
@@ -729,9 +725,13 @@ def main():
     with open(LOG_FILE, 'w') as f:
         f.write('')
 
-    # Load credentials
-    with open(args.credentials) as f:
-        creds = json.load(f)
+    # Load credentials (env vars override the file).
+    from .credentials import load_credentials
+    creds = load_credentials(args.credentials)
+    if not creds.get('username') or not creds.get('password'):
+        write_log('No credentials: set TMW_USERNAME/TMW_PASSWORD or '
+                  'provide a credentials.json.', to_stderr=True)
+        sys.exit(1)
 
     write_log(f'Logging in as {creds["username"]}...', to_stderr=True)
 

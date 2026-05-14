@@ -336,19 +336,21 @@ def main():
 
     setup_logging(args.verbose)
 
-    # Load credentials from file if available
-    if not args.user and os.path.exists(args.credentials):
-        import json
-        with open(args.credentials) as f:
-            creds = json.load(f)
-        args.user = creds.get('username', args.user)
-        args.password = creds.get('password', args.password)
-        args.server = creds.get('server', args.server)
-        args.port = creds.get('port', args.port)
-        if 'char_slot' in creds:
-            args.char = creds['char_slot']
-        args.world = creds.get('world', '')
-        print(f'Loaded credentials for {args.user} from {args.credentials}')
+    # Merge env vars, file, and explicit CLI flags. CLI flags win.
+    from .credentials import load_credentials
+    creds = load_credentials(
+        args.credentials,
+        user=args.user,
+        password=args.password,
+        server=args.server,
+        port=args.port,
+    )
+    args.user = creds.get('username')
+    args.password = creds.get('password')
+    args.server = creds.get('server', args.server)
+    args.port = creds.get('port', args.port)
+    args.char = creds.get('char_slot', args.char)
+    args.world = creds.get('world', '')
 
     if not args.user:
         args.user = input('Username: ')
