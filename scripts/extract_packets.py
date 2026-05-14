@@ -10,7 +10,7 @@ import sys
 import os
 
 # Add tmwa tools dir to path so we can import protocol
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'tmwa', 'tools'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'tmwa', 'tools'))
 
 # We need to intercept the Context.dump() call and just extract packet info
 # Instead, let's parse the protocol.py output more directly
@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'tmwa', 'tools'
 import importlib.util
 spec = importlib.util.spec_from_file_location(
     "protocol",
-    os.path.join(os.path.dirname(__file__), '..', 'tmwa', 'tools', 'protocol.py')
+    os.path.join(os.path.dirname(__file__), '..', '..', 'tmwa', 'tools', 'protocol.py')
 )
 protocol = importlib.util.module_from_spec(spec)
 
@@ -40,7 +40,7 @@ class FakeOpenWrite:
 
 import re
 
-proto_path = os.path.join(os.path.dirname(__file__), '..', 'tmwa', 'tools', 'protocol.py')
+proto_path = os.path.join(os.path.dirname(__file__), '..', '..', 'tmwa', 'tools', 'protocol.py')
 with open(proto_path) as f:
     content = f.read()
 

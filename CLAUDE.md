@@ -40,8 +40,8 @@ tmw-mcp-register --user USERNAME --char-name CHARNAME
 .venv/bin/python -m tmw_mcp.main --credentials credentials.json
 .venv/bin/python -m tmw_mcp.register --user USERNAME --char-name CHARNAME
 
-# Regenerate PACKET_SIZES from upstream tmwa (dev tool, repo root)
-python3 extract_packets.py        # prints a dict; paste over PACKET_SIZES in tmw_mcp/packets.py
+# Regenerate PACKET_SIZES from upstream tmwa (dev tool)
+python3 scripts/extract_packets.py    # prints a dict; paste over PACKET_SIZES in tmw_mcp/packets.py
 ```
 
 No linter or formatter is wired up. Tests insert the repo root onto `sys.path` themselves so they run from any cwd.
@@ -92,4 +92,4 @@ When the game emits something interesting (chat, whisper, NPC dialog turn, comba
 
 ## Protocol source of truth
 
-`../tmwa/tools/protocol.py` is the canonical packet definition that the upstream server compiles from. When adding or changing a packet, run `extract_packets.py` to refresh sizes rather than hand-editing `PACKET_SIZES` in `tmw_mcp/packets.py`. The TMW protocol is little-endian binary over three TCP servers: login (default 6901), char (6122), map (5122). Each packet starts with a u16 id.
+`../tmwa/tools/protocol.py` is the canonical packet definition that the upstream server compiles from. When adding or changing a packet, run `scripts/extract_packets.py` to refresh sizes rather than hand-editing `PACKET_SIZES` in `tmw_mcp/packets.py`. The script expects a sibling `../tmwa/` checkout. The TMW protocol is little-endian binary over three TCP servers: login (default 6901), char (6122), map (5122). Each packet starts with a u16 id.
