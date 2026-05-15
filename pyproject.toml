@@ -38,9 +38,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/bjorn/tmw-mcp"
-Issues = "https://github.com/bjorn/tmw-mcp/issues"
-Source = "https://github.com/bjorn/tmw-mcp"
+Homepage = "https://git.sr.ht/~thorbjorn/tmw-mcp"
+Source = "https://git.sr.ht/~thorbjorn/tmw-mcp"
+Issues = "https://todo.sr.ht/~thorbjorn/tmw-mcp"
 
 [project.scripts]
 tmw-mcp = "tmw_mcp.mcp_shim:main"

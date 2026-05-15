@@ -105,7 +105,7 @@ The same modules also work via `python -m tmw_mcp.mcp_shim` etc, so you don't ne
 ## Running from source
 
 ```bash
-git clone https://github.com/bjorn/tmw-mcp
+git clone https://git.sr.ht/~thorbjorn/tmw-mcp
 cd tmw-mcp
 python3 -m venv .venv
 .venv/bin/pip install -e .
