@@ -618,6 +618,11 @@ class ItemDropped:
     y: int = 0
 
 @dataclass
+class ItemRemove:
+    """0x00a1"""
+    block_id: int = 0
+
+@dataclass
 class InventoryAdd:
     """0x00a0"""
     index: int = 0
@@ -1130,6 +1135,11 @@ def parse_packet(packet_id: int, data: bytes):
             name_id=struct.unpack_from('<H', data, 6)[0],
             item_type=data[21],
             pickup_fail=data[22],
+        )
+
+    elif packet_id == 0x00a1:
+        return ItemRemove(
+            block_id=struct.unpack_from('<I', data, 2)[0],
         )
 
     elif packet_id == 0x00aa:

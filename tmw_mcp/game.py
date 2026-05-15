@@ -67,6 +67,7 @@ from .packets import (
     GmChat,
     ItemVisible,
     ItemDropped,
+    ItemRemove,
     InventoryAdd,
     InventoryRemove,
     InventoryList,
@@ -770,6 +771,10 @@ class GameClient:
                 block_id=pkt.block_id, name_id=pkt.name_id,
                 amount=pkt.amount, x=pkt.x, y=pkt.y)
             return ('item_dropped', pkt)
+
+        elif isinstance(pkt, ItemRemove):
+            self.floor_items.pop(pkt.block_id, None)
+            return ('item_remove', pkt)
 
         elif isinstance(pkt, InventoryList):
             for item in pkt.items:
