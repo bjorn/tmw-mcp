@@ -50,12 +50,11 @@ Where to put the file:
 
 If you'd rather keep credentials in a file than env vars, leave `env` empty and let `tmw-mcp` read `credentials.json` from the cwd it's launched in.
 
-### Self-restart and reactive wakeups
+### Two features worth knowing about
 
-`tmw-mcp` is fronted by a thin stdio shim that owns the actual game-client daemon as a subprocess. Two features fall out of that arrangement:
+* **Reactive wakeups (Claude Code only).** Chat messages, NPC dialog, combat damage, death, map changes, and ferry-bell effects are pushed as `notifications/claude/channel` messages so an idle agent wakes within seconds instead of polling. This is a Claude Code extension; other MCP hosts will silently ignore the notifications. Every `tmw_*` tool itself works identically across hosts.
 
-* **`tmw_restart` tool.** Calling it sends a clean quit to the map server, waits for the server's account-online entry to clear, and respawns the daemon, all without dropping the MCP session. Works in every MCP host; the standard MCP `tools/listChanged` notification fires after the restart so the host re-syncs. It pairs especially well with Claude Code, where the conversation context survives the restart and you get a tight "fix bug, restart, verify" loop in one session.
-* **Reactive wakeups (Claude Code only).** Chat messages, NPC dialog, combat damage, death, map changes, and ferry-bell effects are pushed as `notifications/claude/channel` messages so an idle agent wakes within seconds instead of polling. This is a Claude Code extension; other MCP hosts will silently ignore the notifications. Every other `tmw_*` tool works identically across hosts.
+* **Self-restart via `tmw_restart`.** `tmw-mcp` is fronted by a thin stdio shim that owns the actual game-client daemon as a subprocess. Calling `tmw_restart` sends a clean quit to the map server, waits for the server's account-online entry to clear, and respawns the daemon, all without dropping the MCP session. The standard MCP `tools/listChanged` notification fires after the restart so the host re-syncs. It pairs especially well with Claude Code, where the conversation context survives the restart and you get a tight "fix bug, restart, verify" loop in one session.
 
 ## Configuration
 
