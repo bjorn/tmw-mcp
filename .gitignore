@@ -9,12 +9,3 @@ build/
 dist/
 *.egg-info/
 .venv/
-
-# Stale log paths from before logs moved to XDG_STATE_HOME. Kept so
-# that running an old checkout in-place still ignores them.
-chat_history.log
-npc_history.log
-mcp_startup.log
-mcp_shim_startup.log
-bot_log.txt
-bot_state.txt
