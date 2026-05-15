@@ -521,9 +521,39 @@ async def run_shim(proxy: DaemonProxy | None = None) -> None:
 # Entry point
 # ---------------------------------------------------------------------------
 
+
+def _arm_parent_death_signal() -> None:
+    """On Linux, ask the kernel to SIGTERM us when our parent dies.
+
+    Useful defense against MCP hosts that crash or forget to close
+    our stdin when their session ends. Without this we'd sit forever
+    in stdio_server waiting for an EOF that never arrives, with the
+    daemon child still logged into the game. With this, the kernel
+    SIGTERMs us as soon as the host process is gone, Python's default
+    SIGTERM handling exits us, and the daemon sees its stdin pipe
+    close and exits in turn.
+
+    Silent no-op on non-Linux and on any prctl error (e.g. in
+    sandboxed environments where libc.so.6 isn't reachable).
+    """
+    if sys.platform != 'linux':
+        return
+    try:
+        import ctypes
+        libc = ctypes.CDLL('libc.so.6', use_errno=True)
+        PR_SET_PDEATHSIG = 1
+        if libc.prctl(PR_SET_PDEATHSIG, signal.SIGTERM, 0, 0, 0) != 0:
+            log.warning('PR_SET_PDEATHSIG failed: errno=%d',
+                        ctypes.get_errno())
+    except Exception as e:
+        log.debug('Could not arm parent-death signal: %s', e)
+
+
 def main() -> None:
     """Console script entry point: run the self-restartable MCP shim."""
     import anyio
+
+    _arm_parent_death_signal()
 
     # Mirror mcp_server.py: log startup failures to a file so we can diagnose
     # things even when Claude Code does not surface stderr.
