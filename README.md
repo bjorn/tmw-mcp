@@ -4,6 +4,10 @@ A Python client for [The Mana World](https://www.themanaworld.org/) (a tmwAthena
 
 The bot also runs as an interactive CLI for humans, and ships with an optional browser dashboard.
 
+## Please follow the server rules
+
+The Mana World's [game rules](https://policies.themanaworld.org/game-rules/) explicitly forbid AFK botting. Treat this MCP server as an **attended assistant**: stay at the keyboard while your character is logged in, prompt the bot to respond to chat and GMs in a timely way, and disconnect before stepping away. Running it unattended may get your account banned.
+
 ## Install
 
 ```bash
