@@ -1,7 +1,9 @@
-"""Monster name lookup from client-data ``monsters.xml``.
+"""Monster name lookup from the resource overlay.
 
-Reads from the ResourceManager (zip overlay populated from the update
-host), or, if ``TMW_CLIENT_DATA`` is set, from that directory.
+Reads ``monsters.xml`` from the
+:class:`~tmw_mcp.resources.ResourceManager` zip overlay populated
+from the update host on first login (or from the ``TMW_CLIENT_DATA``
+filesystem override).
 """
 
 import xml.etree.ElementTree as ET

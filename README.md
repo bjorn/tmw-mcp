@@ -118,7 +118,7 @@ If you'd rather not have a `credentials.json` on disk at all, pass `TMW_USERNAME
 | `TMW_PORT`              | Override port only. Default `6901`.                                     |
 | `TMW_WORLD`             | World name (blank for default).                                         |
 | `TMW_DASHBOARD_PORT`    | Bind the browser dashboard on `127.0.0.1:PORT`. Off by default.         |
-| `TMW_CLIENT_DATA`       | Skip the update-host download and read game data from this directory. Useful for development against a checked-out `tmwa-client-data`. |
+| `TMW_CLIENT_DATA`       | Skip the update-host download and read game data from this directory instead. Dev-only convenience for iterating on local TMX / item XML edits. |
 | `TMW_CREDENTIALS_FILE`  | Absolute path to a `credentials.json`. Useful when your MCP host runs `tmw-mcp` from a cwd that doesn't contain one. |
 
 Precedence: explicit CLI flags > env vars > `credentials.json` > built-in defaults. `TMW_CREDENTIALS_FILE`, if set, picks which `credentials.json` gets read; per-field env vars (`TMW_USERNAME` etc.) still override whatever's in the file.
@@ -158,13 +158,7 @@ python3 -m venv .venv
 .venv/bin/python -m unittest discover   # from repo root; 66 tests
 ```
 
-For development against local client-data:
-
-```bash
-git clone https://github.com/themanaworld/tmwa-client-data ../client-data
-export TMW_CLIENT_DATA=../client-data
-.venv/bin/tmw-mcp-cli --credentials credentials.json
-```
+Game data (maps, items, monsters) is fetched from the server's update host on first login and cached under `~/.cache/tmw-mcp/`, so a checkout is all you need to run the tests and the CLI. If you want to iterate on local TMX or item XML changes, point `TMW_CLIENT_DATA` at a directory that mirrors the same layout and the downloader is bypassed.
 
 ## How it works
 

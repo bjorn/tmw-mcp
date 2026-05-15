@@ -1,10 +1,12 @@
 """
-Item name lookup from client-data XML.
+Item name lookup from the resource overlay.
 
-Reads from the ResourceManager (zip overlay populated from the update
-host), or, if ``TMW_CLIENT_DATA`` is set, from that directory. Also
-extracts a handful of combat-relevant attributes (attack range, type)
-so the client can reason about equipped weapons / ammo without
+Reads ``items.xml`` (and any ``items/*.xml`` shards) from the
+:class:`~tmw_mcp.resources.ResourceManager` zip overlay populated
+from the update host on first login. ``TMW_CLIENT_DATA`` points the
+overlay at a filesystem directory instead for local development. The
+parser also pulls a few combat-relevant attributes (attack range,
+type) so the client can reason about equipped weapons / ammo without
 waiting for server status updates.
 """
 
@@ -36,7 +38,7 @@ def load_item_names():
     if not rm.ready():
         return
 
-    # tmwa-client-data layout: a single items.xml at the root.
+    # Flat layout: a single items.xml at the overlay root.
     try:
         _parse_xml(rm.open('items.xml'))
     except FileNotFoundError:

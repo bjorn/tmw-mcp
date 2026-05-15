@@ -26,7 +26,8 @@ servers (live + test, for instance) stay isolated.
 
 Setting ``TMW_CLIENT_DATA`` to a directory short-circuits the
 downloader entirely and reads files from that directory. Useful for
-developers working off a checked-out tmwa-client-data, and for tests.
+tests and for developers iterating on local TMX or item XML edits
+without re-zipping.
 """
 
 from __future__ import annotations

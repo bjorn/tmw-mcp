@@ -46,16 +46,11 @@ python3 scripts/extract_packets.py    # prints a dict; paste over PACKET_SIZES i
 
 No linter or formatter is wired up. Tests insert the repo root onto `sys.path` themselves so they run from any cwd.
 
-### Upstream repos
-
-- `../client-data/` from <https://github.com/themanaworld/tmwa-client-data> - TMX maps, item XML, monster XML. Currently read by `maps.py`, `items.py`, `monsters.py` from a sibling checkout. **This will go away** once the ZIP-based update host downloader (planned) lands.
-- `../tmwa/` from <https://github.com/themanaworld/tmwa> - the upstream server. Only needed at dev time by `extract_packets.py` to regenerate the packet size table.
-
 ## Architecture
 
 ### Three layers, one game loop
 
-1. **Wire layer** (`tmw_mcp/net.py`, `tmw_mcp/packets.py`). `Connection` does packet framing using `PACKET_SIZES` (auto-extracted from `tmwa/tools/protocol.py`). Variable-size packets read a u16 length at offset 2; the special `0x8000` "hold notify" is a fixed 4-byte frame with no payload. `packets.py` owns every builder and parser plus `encode_pos1` / `decode_pos1` / `decode_pos2` for the packed coordinate format.
+1. **Wire layer** (`tmw_mcp/net.py`, `tmw_mcp/packets.py`). `Connection` does packet framing using `PACKET_SIZES`, a table generated from the upstream tmwAthena server's protocol definition (see "Protocol source of truth" below for how to regenerate). Variable-size packets read a u16 length at offset 2; the special `0x8000` "hold notify" is a fixed 4-byte frame with no payload. `packets.py` owns every builder and parser plus `encode_pos1` / `decode_pos1` / `decode_pos2` for the packed coordinate format.
 2. **Game layer** (`tmw_mcp/game.py`). A single `GameClient` walks the login -> char -> map server handshake, then dispatches incoming packets to handlers that mutate state (`player`, `beings`, `floor_items`, `inventory`, `npc_dialog`). Player actions (`walk`, `attack`, `npc_*`, `pickup`, ...) are methods on this class. A* pathing and hunt logic live here too. The map server silently drops walks beyond ~17 tiles, so `walk_path` / `walk` clamp to 10 and reissue.
 3. **Frontends**, each owning its own loop and reusing `GameClient`:
    - `tmw_mcp/main.py` - interactive REPL for humans.
@@ -78,7 +73,7 @@ When the game emits something interesting (chat, whisper, NPC dialog turn, comba
 
 ### Data lookups
 
-`items.py`, `monsters.py`, and `maps.py` parse XML/TMX from `../../client-data/` (sibling-of-sibling because the package is one level deeper now). This is being replaced by a ZIP-based update-host downloader.
+`items.py`, `monsters.py`, and `maps.py` look up names and parse TMX maps through `tmw_mcp.resources.default_manager()`. The `ResourceManager` is populated on first login: the server sends `SMSG_UPDATE_HOST` (0x0063), `game.GameClient._kick_resource_download` fires a background thread that fetches `resources.xml` from that host, downloads any zips not already in `${XDG_CACHE_HOME:-~/.cache}/tmw-mcp/<host-fingerprint>/`, verifies adler32, and exposes the union as a flat read-only overlay. Setting `TMW_CLIENT_DATA=/path/to/dir` short-circuits the whole thing and reads files from that directory instead (used in tests and for local TMX iteration).
 
 ## Conventions worth knowing
 
@@ -127,4 +122,6 @@ git push origin v0.1.0
 
 ## Protocol source of truth
 
-`../tmwa/tools/protocol.py` is the canonical packet definition that the upstream server compiles from. When adding or changing a packet, run `scripts/extract_packets.py` to refresh sizes rather than hand-editing `PACKET_SIZES` in `tmw_mcp/packets.py`. The script expects a sibling `../tmwa/` checkout. The TMW protocol is little-endian binary over three TCP servers: login (default 6901), char (6122), map (5122). Each packet starts with a u16 id.
+The TMW protocol is little-endian binary over three TCP servers: login (default 6901), char (6122), map (5122). Each packet starts with a u16 id, and `PACKET_SIZES` in `tmw_mcp/packets.py` is the table that drives `net.Connection`'s framing.
+
+That table is regenerated from `tools/protocol.py` in the upstream [tmwAthena server](https://github.com/themanaworld/tmwa) by running `scripts/extract_packets.py`. The script reads `protocol.py` from a relative path that assumes a sibling tmwa checkout next to this repo; clone tmwa wherever you like and either symlink it or adjust `proto_path` in the script. The output is a Python dict you paste over `PACKET_SIZES`. It's a dev-only convenience and never runs at install or runtime.

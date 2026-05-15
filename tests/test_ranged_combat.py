@@ -116,7 +116,7 @@ def add_being(c: GameClient, block_id: int, name: str, x: int, y: int,
     c.beings[block_id] = b
 
 
-# Item ids from client-data/items/.
+# Item ids from the TMW item database (Bow / Arrow / Snowball).
 BOW_ID = 1200
 SNOWBALL_ID = 5260
 ARROW_ID = 1199
