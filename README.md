@@ -49,6 +49,8 @@ Equivalent in JSON, drop into `.mcp.json` at your project root by hand:
 
 Verify with `claude mcp list`; remove with `claude mcp remove tmw`.
 
+The reactive-wakeup channel is gated behind a Claude Code dev flag. Launch claude with `--dangerously-load-development-channels server:tmw` so the host actually subscribes to `notifications/claude/channel` from this server; without the flag every other tool still works, you just don't get the wake-up on in-game events.
+
 ### Other hosts (no wake-ups)
 
 The tool surface is identical across hosts; what you lose without Claude Code is just the wake-up channel, every `tmw` tool itself works the same. Pick whichever fits your workflow.
