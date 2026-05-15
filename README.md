@@ -18,28 +18,23 @@ The only third-party dependency is `mcp`. Game data (maps, items, monsters, spri
 tmw-mcp-register --user MyAccount --char-name MyCharacter
 ```
 
-This writes a `credentials.json` (`chmod 600`, owner read/write only) in the current directory. Treat it like any other secret. You can skip the file entirely and use environment variables instead (see [Configuration](#configuration) below).
+This writes a `credentials.json` (`chmod 600`, owner read/write only) in the current directory. Treat it like any other secret. `tmw-mcp` looks for it in its own current working directory by default, so the simplest setup is to run the host from this same directory; otherwise point at the file explicitly with `TMW_CREDENTIALS_FILE` (covered below).
 
 ## Use it from an MCP client
 
-Every MCP host uses the same JSON shape. Drop this into your host's config file (paths below) and restart it.
+### Hosts that use a JSON config file
+
+This covers Claude Code, Claude Desktop, Cursor, and Cline. Drop this into the right config file and restart the host.
 
 ```json
 {
   "mcpServers": {
     "tmw": {
-      "command": "tmw-mcp",
-      "env": {
-        "TMW_USERNAME": "MyAccount",
-        "TMW_PASSWORD": "...",
-        "TMW_CHAR_NAME": "MyCharacter"
-      }
+      "command": "tmw-mcp"
     }
   }
 }
 ```
-
-Where to put the file:
 
 | Host          | Config path                                                                 |
 | ------------- | --------------------------------------------------------------------------- |
@@ -48,7 +43,56 @@ Where to put the file:
 | Cursor        | `~/.cursor/mcp.json` (user) or `.cursor/mcp.json` (workspace)               |
 | Cline         | `cline_mcp_settings.json` (open via "Cline: MCP Servers" command in VS Code)|
 
-If you'd rather keep credentials in a file than env vars, leave `env` empty and let `tmw-mcp` read `credentials.json` from the cwd it's launched in.
+### VS Code Copilot extension
+
+VS Code's Copilot extension uses a slightly different shape (`servers` instead of `mcpServers`, explicit `type: "stdio"`). Drop this into `.vscode/mcp.json` at the workspace root (or use "MCP: Open User Configuration" for user-level):
+
+```json
+{
+  "servers": {
+    "tmw": {
+      "type": "stdio",
+      "command": "tmw-mcp"
+    }
+  }
+}
+```
+
+Switch the Copilot chat panel from "Ask" to "Agent" mode; MCP tools only show up there.
+
+### Hosts that register via CLI
+
+GitHub's Copilot CLI and OpenAI's Codex CLI both have a `<host> mcp add` subcommand that writes the config for you:
+
+```bash
+copilot mcp add tmw -- tmw-mcp   # writes ~/.copilot/mcp-config.json
+codex mcp add tmw -- tmw-mcp     # writes a block into ~/.codex/config.toml
+```
+
+Verify with `copilot mcp list` / `codex mcp list`. Remove with `copilot mcp remove tmw` / `codex mcp remove tmw`. If `tmw-mcp` isn't on your `PATH` (e.g. it's only in a specific venv), use the absolute path after the `--`.
+
+### When credentials.json isn't in the host's cwd
+
+Workspace-aware hosts (Claude Code, Cursor, Cline, VS Code Copilot) launch `tmw-mcp` with the workspace as cwd, so a `credentials.json` at the workspace root is found automatically. The CLI hosts (Copilot CLI, Codex CLI) inherit your terminal's cwd. If neither lines up with where `credentials.json` lives (Claude Desktop on macOS, for instance), pass an absolute path via `TMW_CREDENTIALS_FILE`:
+
+```json
+{
+  "mcpServers": {
+    "tmw": {
+      "command": "tmw-mcp",
+      "env": {
+        "TMW_CREDENTIALS_FILE": "/home/you/credentials.json"
+      }
+    }
+  }
+}
+```
+
+Same `--env TMW_CREDENTIALS_FILE=...` for the CLI hosts.
+
+### Without a credentials file
+
+If you'd rather not have a `credentials.json` on disk at all, pass `TMW_USERNAME`, `TMW_PASSWORD`, and `TMW_CHAR_NAME` in the host's `env` block directly. Mind that those secrets then live inside each host's config file, which is usually plaintext and sometimes inside a workspace dir that's easy to commit by accident.
 
 ### Two features worth knowing about
 
@@ -65,14 +109,14 @@ If you'd rather keep credentials in a file than env vars, leave `env` empty and 
 | `TMW_CHAR_NAME`         | Character name (optional if `TMW_CHAR_SLOT` covers it)                  |
 | `TMW_CHAR_SLOT`         | Character slot index (0, 1, or 2). Default `0`.                         |
 | `TMW_GENDER`            | `M` or `F`. Only used by registration.                                  |
-| `TMW_SERVER`            | Login server host. Accepts `host:port`. Default `server.themanaworld.org`.|
-| `TMW_PORT`              | Override port only.                                                     |
+| `TMW_SERVER`            | Login server. Accepts `host` or `host:port`. Default `server.themanaworld.org:6901`. |
+| `TMW_PORT`              | Override port only. Default `6901`.                                     |
 | `TMW_WORLD`             | World name (blank for default).                                         |
 | `TMW_DASHBOARD_PORT`    | Bind the browser dashboard on `127.0.0.1:PORT`. Off by default.         |
 | `TMW_CLIENT_DATA`       | Skip the update-host download and read game data from this directory. Useful for development against a checked-out `tmwa-client-data`. |
 | `TMW_CREDENTIALS_FILE`  | Absolute path to a `credentials.json`. Useful when your MCP host runs `tmw-mcp` from a cwd that doesn't contain one. |
 
-Precedence: explicit CLI flags > env vars > `credentials.json` > built-in defaults.
+Precedence: explicit CLI flags > env vars > `credentials.json` > built-in defaults. `TMW_CREDENTIALS_FILE`, if set, picks which `credentials.json` gets read; per-field env vars (`TMW_USERNAME` etc.) still override whatever's in the file.
 
 ## Browser dashboard
 
