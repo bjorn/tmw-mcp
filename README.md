@@ -18,7 +18,7 @@ The only third-party dependency is `mcp`. Game data (maps, items, monsters, spri
 tmw-mcp-register --user MyAccount --char-name MyCharacter
 ```
 
-This writes a `credentials.json` (mode 0o600) in the current directory. Treat it like any other secret. You can skip the file entirely and use environment variables instead (see [Configuration](#configuration) below).
+This writes a `credentials.json` (`chmod 600`, owner read/write only) in the current directory. Treat it like any other secret. You can skip the file entirely and use environment variables instead (see [Configuration](#configuration) below).
 
 ## Use it from an MCP client
 
@@ -50,14 +50,12 @@ Where to put the file:
 
 If you'd rather keep credentials in a file than env vars, leave `env` empty and let `tmw-mcp` read `credentials.json` from the cwd it's launched in.
 
-### Claude Code only: reactive wakeups and self-restart
+### Self-restart and reactive wakeups
 
-`tmw-mcp` ships two Claude Code-specific extensions that other MCP hosts will silently ignore:
+`tmw-mcp` is fronted by a thin stdio shim that owns the actual game-client daemon as a subprocess. Two features fall out of that arrangement:
 
-* **Reactive wakeups.** Chat messages, NPC dialog, combat damage, death, map changes, and ferry-bell effects are pushed as `notifications/claude/channel` messages so an idle agent wakes within seconds instead of polling.
-* **`tmw_restart` tool.** A thin stdio shim owns the daemon subprocess. Calling `tmw_restart` sends a clean quit to the map server, waits for the account-online entry to clear, and respawns the daemon, all without dropping the MCP session. Great for "fix bug, restart, verify" loops on Claude Code.
-
-Other hosts can still call every other `tmw_*` tool exactly the same way; they just won't be woken up automatically.
+* **`tmw_restart` tool.** Calling it sends a clean quit to the map server, waits for the server's account-online entry to clear, and respawns the daemon, all without dropping the MCP session. Works in every MCP host; the standard MCP `tools/listChanged` notification fires after the restart so the host re-syncs. It pairs especially well with Claude Code, where the conversation context survives the restart and you get a tight "fix bug, restart, verify" loop in one session.
+* **Reactive wakeups (Claude Code only).** Chat messages, NPC dialog, combat damage, death, map changes, and ferry-bell effects are pushed as `notifications/claude/channel` messages so an idle agent wakes within seconds instead of polling. This is a Claude Code extension; other MCP hosts will silently ignore the notifications. Every other `tmw_*` tool works identically across hosts.
 
 ## Configuration
 
@@ -87,7 +85,7 @@ Set `TMW_DASHBOARD_PORT=8765` (or pass `--dashboard-port 8765` to any CLI entry)
 | --------------------- | ---------------------------------------------------------- |
 | Downloaded game data  | `${XDG_CACHE_HOME:-~/.cache}/tmw-mcp/`                     |
 | Logs and session state| `${XDG_STATE_HOME:-~/.local/state}/tmw-mcp/`               |
-| Credentials file      | `./credentials.json` in your cwd (mode 0o600, gitignored)  |
+| Credentials file      | `./credentials.json` in your cwd (`chmod 600`, gitignored) |
 
 ## Console scripts
 

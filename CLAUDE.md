@@ -87,7 +87,7 @@ When the game emits something interesting (chat, whisper, NPC dialog turn, comba
 - **Client version.** `MIN_CLIENT_VERSION = 6`. The Mana reference client sends 8; this client matches that.
 - **Walk clamp.** The map server silently rejects walk requests beyond ~17 tiles. `game.py` clamps to 10 and reissues when the destination is further; do not remove the clamp.
 - **NPC dialog state machine.** Click NPC (`tmw_npc`) -> receive lines -> advance with `tmw_npc_next` -> when choices appear, select with `tmw_npc_choose` (1-based) -> close with `tmw_npc_close`. State lives in `npc_dialog`, `npc_waiting_next`, `npc_waiting_choice` on `GameClient`.
-- **Credentials.** `credentials.json` is mode 0o600 and gitignored. Never log it or commit it.
+- **Credentials.** `credentials.json` is `chmod 600` (owner read/write only) and gitignored. Never log it or commit it.
 - **Persistent logs.** `chat_history.log` and `npc_history.log` live under `${XDG_STATE_HOME:-~/.local/state}/tmw-mcp/` (see `tmw_mcp/paths.py`). They are append-only and grep-friendly; the bot relies on this to recover context across restarts. Do not rotate or truncate them as part of routine changes.
 
 ## Releasing to PyPI
