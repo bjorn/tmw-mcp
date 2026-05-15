@@ -49,11 +49,11 @@ FAKE_DAEMON_OK = textwrap.dedent('''
         rid = req.get("id")
         if method == "list_tools":
             tools = [
-                {"name": "tmw_say", "description": "say something",
+                {"name": "say", "description": "say something",
                  "inputSchema": {"type": "object",
                                  "properties": {"message": {"type": "string"}},
                                  "required": ["message"]}},
-                {"name": "tmw_state", "description": "show state",
+                {"name": "state", "description": "show state",
                  "inputSchema": {"type": "object", "properties": {}}},
             ]
             emit({"jsonrpc": "2.0", "id": rid, "result": tools})
@@ -145,17 +145,17 @@ class DaemonProxyRoundtripTest(unittest.IsolatedAsyncioTestCase):
         await proxy.start()
         try:
             self.assertEqual({t['name'] for t in proxy.tools},
-                             {'tmw_say', 'tmw_state'})
+                             {'say', 'state'})
             result = await proxy.request(
                 'call_tool',
-                {'name': 'tmw_say', 'arguments': {'message': 'hi'}},
+                {'name': 'say', 'arguments': {'message': 'hi'}},
             )
-            self.assertIn('ok:tmw_say', result)
+            self.assertIn('ok:say', result)
             # The fake also sends a notification after call_tool. Give the
             # reader task a moment to surface it.
             await asyncio.sleep(0.1)
             self.assertIn('[Bot] fake online', cap.lines)
-            self.assertTrue(any('[Note] called tmw_say' in line
+            self.assertTrue(any('[Note] called say' in line
                                 for line in cap.lines))
         finally:
             await proxy.stop_graceful()
@@ -182,9 +182,9 @@ class DaemonProxyRestartTest(unittest.IsolatedAsyncioTestCase):
             # After restart, call_tool still works.
             r = await proxy.request(
                 'call_tool',
-                {'name': 'tmw_state', 'arguments': {}},
+                {'name': 'state', 'arguments': {}},
             )
-            self.assertIn('ok:tmw_state', r)
+            self.assertIn('ok:state', r)
         finally:
             mcp_shim.CLEAN_QUIT_RECOVERY_SECONDS = old_clean
             await proxy.stop_graceful()

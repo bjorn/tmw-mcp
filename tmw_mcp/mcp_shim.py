@@ -362,7 +362,7 @@ class DaemonProxy:
 
 def _build_restart_tool() -> dict:
     return {
-        'name': 'tmw_restart',
+        'name': 'restart',
         'description': (
             'Hard-restart the TMW bot daemon. Sends a clean quit to the '
             'map server so re-login succeeds immediately. Useful when the '
@@ -472,7 +472,7 @@ async def run_shim(proxy: DaemonProxy | None = None) -> None:
             except LookupError:
                 pass
 
-        if name == 'tmw_restart':
+        if name == 'restart':
             mode = await proxy.restart()
             await _notify_upstream(f'[Bot] daemon restarted ({mode})')
             # Tool list might have changed across the restart; let the client

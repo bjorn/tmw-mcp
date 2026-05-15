@@ -4,9 +4,7 @@ TMW Bot MCP Server - exposes game commands as MCP tools and pushes
 game events as channel notifications to wake Claude from idle.
 
 Usage (via .mcp.json):
-    { "mcpServers": { "tmw-bot": { "command": "python3", "args": ["client/mcp_server.py"] } } }
-
-Then: claude --channels server:tmw-bot --dangerously-load-development-channels
+    { "mcpServers": { "tmw": { "command": "tmw-mcp" } } }
 """
 
 import asyncio
@@ -654,7 +652,7 @@ def game_loop():
 
 
 # ---------------------------------------------------------------------------
-# State formatting (for tmw_state tool)
+# State formatting (for the `state` tool)
 # ---------------------------------------------------------------------------
 
 def format_game_state(client: GameClient) -> str:
@@ -780,7 +778,7 @@ def _connect_game():
             # Operator hooks run on the dashboard HTTP thread. ``walk``
             # and ``attack`` enqueue a command on ``state.command_queue``
             # so the game thread processes them on its next tick: the
-            # same path tmw_walk and tmw_attack take. ``notify`` uses
+            # same path the `walk` and `attack` tools take. ``notify`` uses
             # the existing push_notification bridge (which already does
             # asyncio.call_soon_threadsafe back to the MCP event loop)
             # so [Operator] lines land in Claude's conversation just
@@ -856,10 +854,10 @@ async def lifespan(server: FastMCP):
 
 
 mcp = FastMCP(
-    "tmw-bot",
+    "tmw",
     instructions=(
         "TMW game bot for The Mana World MMORPG. "
-        "Use tmw_state to see the game world, then use other tools to act. "
+        "Use the `state` tool to see the game world, then use other tools to act. "
         "Channel notifications will alert you to chat messages, NPC dialogs, "
         "combat, and map changes."
     ),
@@ -869,7 +867,7 @@ mcp = FastMCP(
 
 # --- Game state tool ---
 
-@mcp.tool()
+@mcp.tool(name="state")
 def tmw_state(ctx: Context) -> str:
     """Get current game state: character info, position, HP/SP, nearby beings, floor items."""
     ensure_session(ctx)
@@ -879,7 +877,7 @@ def tmw_state(ctx: Context) -> str:
     return format_game_state(client)
 
 
-@mcp.tool()
+@mcp.tool(name="inventory")
 def tmw_inventory(ctx: Context) -> str:
     """List inventory items."""
     ensure_session(ctx)
@@ -894,7 +892,7 @@ def tmw_inventory(ctx: Context) -> str:
     return '\n'.join(lines) if lines else '(empty)'
 
 
-@mcp.tool()
+@mcp.tool(name="online")
 def tmw_online(ctx: Context) -> str:
     """Get list of all players currently online."""
     ensure_session(ctx)
@@ -903,28 +901,28 @@ def tmw_online(ctx: Context) -> str:
 
 # --- Chat tools ---
 
-@mcp.tool()
+@mcp.tool(name="say")
 def tmw_say(ctx: Context, message: str) -> str:
     """Send a public chat message in-game."""
     ensure_session(ctx)
     return send_command('say', message=message)
 
 
-@mcp.tool()
+@mcp.tool(name="whisper")
 def tmw_whisper(ctx: Context, target: str, message: str) -> str:
     """Send a private message to a player."""
     ensure_session(ctx)
     return send_command('whisper', target=target, message=message)
 
 
-@mcp.tool()
+@mcp.tool(name="party_chat")
 def tmw_party_chat(ctx: Context, message: str) -> str:
     """Send a message to party members."""
     ensure_session(ctx)
     return send_command('party_message', message=message)
 
 
-@mcp.tool()
+@mcp.tool(name="party_leave")
 def tmw_party_leave(ctx: Context) -> str:
     """Leave the current party."""
     ensure_session(ctx)
@@ -933,28 +931,28 @@ def tmw_party_leave(ctx: Context) -> str:
 
 # --- Movement tools ---
 
-@mcp.tool()
+@mcp.tool(name="walk")
 def tmw_walk(ctx: Context, x: int, y: int) -> str:
     """Walk to coordinates (x, y) using A* pathfinding. Sends a channel notification on arrival or failure."""
     ensure_session(ctx)
     return send_command('walk', x=x, y=y)
 
 
-@mcp.tool()
+@mcp.tool(name="face")
 def tmw_face(ctx: Context, direction: int) -> str:
     """Change facing direction (0=south, 2=west, 4=north, 6=east)."""
     ensure_session(ctx)
     return send_command('face', direction=direction)
 
 
-@mcp.tool()
+@mcp.tool(name="sit")
 def tmw_sit(ctx: Context) -> str:
     """Sit down."""
     ensure_session(ctx)
     return send_command('sit')
 
 
-@mcp.tool()
+@mcp.tool(name="stand")
 def tmw_stand(ctx: Context) -> str:
     """Stand up."""
     ensure_session(ctx)
@@ -963,49 +961,49 @@ def tmw_stand(ctx: Context) -> str:
 
 # --- Combat tools ---
 
-@mcp.tool()
+@mcp.tool(name="attack")
 def tmw_attack(ctx: Context, target_id: int) -> str:
     """Attack a being by ID (starts continuous attack)."""
     ensure_session(ctx)
     return send_command('attack', target_id=target_id)
 
 
-@mcp.tool()
+@mcp.tool(name="stop_attack")
 def tmw_stop_attack(ctx: Context) -> str:
     """Stop auto-attack and hunting."""
     ensure_session(ctx)
     return send_command('stopattack')
 
 
-@mcp.tool()
+@mcp.tool(name="hunt")
 def tmw_hunt(ctx: Context, monster_name: str) -> str:
     """Continuously hunt monster(s) by name. Comma-separated for multiple types. Pass empty string to stop."""
     ensure_session(ctx)
     return send_command('hunt', monster_name=monster_name)
 
 
-@mcp.tool()
+@mcp.tool(name="respawn")
 def tmw_respawn(ctx: Context) -> str:
     """Respawn after death."""
     ensure_session(ctx)
     return send_command('respawn')
 
 
-@mcp.tool()
+@mcp.tool(name="party_reply")
 def tmw_party_reply(ctx: Context, account_id: int, accept: bool = True) -> str:
     """Accept or reject a party invitation."""
     ensure_session(ctx)
     return send_command('party_reply', account_id=account_id, accept=accept)
 
 
-@mcp.tool()
+@mcp.tool(name="attack_range")
 def tmw_attack_range(ctx: Context, range: int = 1) -> str:
     """Override weapon attack range (normally auto-detected from server). 1=melee, 2=scythe/polearm."""
     ensure_session(ctx)
     return send_command('attack_range', range=range)
 
 
-@mcp.tool()
+@mcp.tool(name="ferry_exit")
 def tmw_ferry_exit(ctx: Context, bells: int = 1) -> str:
     """Auto-exit the ferry after N bell rings. E.g. bells=1 exits at next stop, bells=2 skips one stop then exits."""
     ensure_session(ctx)
@@ -1014,56 +1012,56 @@ def tmw_ferry_exit(ctx: Context, bells: int = 1) -> str:
 
 # --- Item tools ---
 
-@mcp.tool()
+@mcp.tool(name="pickup")
 def tmw_pickup(ctx: Context, item_id: int) -> str:
     """Pick up a floor item by ID."""
     ensure_session(ctx)
     return send_command('pickup', item_id=item_id)
 
 
-@mcp.tool()
+@mcp.tool(name="shop_buy")
 def tmw_shop_buy(ctx: Context, npc_id: int) -> str:
     """Open a shop NPC's buy list. Use after clicking a shop NPC (0x00c4 event). The buy list will appear in game state."""
     ensure_session(ctx)
     return send_command('shop_buy', npc_id=npc_id)
 
 
-@mcp.tool()
+@mcp.tool(name="shop_sell")
 def tmw_shop_sell(ctx: Context, npc_id: int) -> str:
     """Open a shop NPC's sell list. Use after clicking a shop NPC (0x00c4 event)."""
     ensure_session(ctx)
     return send_command('shop_sell', npc_id=npc_id)
 
 
-@mcp.tool()
+@mcp.tool(name="buy")
 def tmw_buy(ctx: Context, name_id: int, count: int = 1) -> str:
     """Buy items from shop. Must open buy list first with tmw_shop_buy."""
     ensure_session(ctx)
     return send_command('buy', name_id=name_id, count=count)
 
 
-@mcp.tool()
+@mcp.tool(name="sell")
 def tmw_sell(ctx: Context, index: int, count: int = 1) -> str:
     """Sell items to shop. Must open sell list first with tmw_shop_sell."""
     ensure_session(ctx)
     return send_command('sell', index=index, count=count)
 
 
-@mcp.tool()
+@mcp.tool(name="equip")
 def tmw_equip(ctx: Context, index: int) -> str:
     """Equip an item by inventory index."""
     ensure_session(ctx)
     return send_command('equip', index=index)
 
 
-@mcp.tool()
+@mcp.tool(name="use")
 def tmw_use(ctx: Context, index: int) -> str:
     """Use an item by inventory index."""
     ensure_session(ctx)
     return send_command('use', index=index)
 
 
-@mcp.tool()
+@mcp.tool(name="drop")
 def tmw_drop(ctx: Context, index: int, amount: int = 0) -> str:
     """Drop an item on the ground. Amount 0 = drop entire stack."""
     ensure_session(ctx)
@@ -1072,21 +1070,21 @@ def tmw_drop(ctx: Context, index: int, amount: int = 0) -> str:
 
 # --- NPC tools ---
 
-@mcp.tool()
+@mcp.tool(name="npc")
 def tmw_npc(ctx: Context, npc_id: int) -> str:
     """Click on an NPC to start dialog."""
     ensure_session(ctx)
     return send_command('npc', npc_id=npc_id)
 
 
-@mcp.tool()
+@mcp.tool(name="npc_next")
 def tmw_npc_next(ctx: Context) -> str:
     """Continue NPC dialog (click Next)."""
     ensure_session(ctx)
     return send_command('next')
 
 
-@mcp.tool()
+@mcp.tool(name="npc_close")
 def tmw_npc_close(ctx: Context, npc_id: int = 0) -> str:
     """Close NPC dialog. If npc_id is 0 (default), closes the NPC tracked by the client;
     pass an explicit id to close a specific NPC when the client state is stale (e.g., after
@@ -1095,7 +1093,7 @@ def tmw_npc_close(ctx: Context, npc_id: int = 0) -> str:
     return send_command('close', npc_id=npc_id)
 
 
-@mcp.tool()
+@mcp.tool(name="close_storage")
 def tmw_close_storage(ctx: Context) -> str:
     """Send CMSG_CLOSE_STORAGE (0x00f7) to the server. Required after clicking a storage
     NPC — without it, the server leaves sd->state.storage_open set and silently drops
@@ -1104,21 +1102,21 @@ def tmw_close_storage(ctx: Context) -> str:
     return send_command('close_storage')
 
 
-@mcp.tool()
+@mcp.tool(name="npc_choose")
 def tmw_npc_choose(ctx: Context, choice: int) -> str:
     """Choose an NPC menu option (1-based index)."""
     ensure_session(ctx)
     return send_command('choose', choice=choice)
 
 
-@mcp.tool()
+@mcp.tool(name="npc_input_str")
 def tmw_npc_input_str(ctx: Context, text: str) -> str:
     """Submit text input to an NPC dialog."""
     ensure_session(ctx)
     return send_command('npc_input_str', text=text)
 
 
-@mcp.tool()
+@mcp.tool(name="npc_input_int")
 def tmw_npc_input_int(ctx: Context, value: int) -> str:
     """Submit integer input to an NPC dialog."""
     ensure_session(ctx)
@@ -1127,56 +1125,56 @@ def tmw_npc_input_int(ctx: Context, value: int) -> str:
 
 # --- Trade tools ---
 
-@mcp.tool()
+@mcp.tool(name="trade_request")
 def tmw_trade_request(ctx: Context, target: str) -> str:
     """Request a player-to-player trade with the given player name."""
     ensure_session(ctx)
     return send_command('trade_request', target=target)
 
 
-@mcp.tool()
+@mcp.tool(name="trade_accept")
 def tmw_trade_accept(ctx: Context) -> str:
     """Accept an incoming trade request."""
     ensure_session(ctx)
     return send_command('trade_accept')
 
 
-@mcp.tool()
+@mcp.tool(name="trade_reject")
 def tmw_trade_reject(ctx: Context) -> str:
     """Reject an incoming trade request."""
     ensure_session(ctx)
     return send_command('trade_reject')
 
 
-@mcp.tool()
+@mcp.tool(name="trade_add_item")
 def tmw_trade_add_item(ctx: Context, index: int, amount: int = 0) -> str:
     """Add an inventory item to the trade offer (amount=0 means entire stack)."""
     ensure_session(ctx)
     return send_command('trade_add_item', index=index, amount=amount)
 
 
-@mcp.tool()
+@mcp.tool(name="trade_add_zeny")
 def tmw_trade_add_zeny(ctx: Context, amount: int) -> str:
     """Add zeny (GP) to the trade offer."""
     ensure_session(ctx)
     return send_command('trade_add_zeny', amount=amount)
 
 
-@mcp.tool()
+@mcp.tool(name="trade_lock")
 def tmw_trade_lock(ctx: Context) -> str:
     """Lock your side of the trade (indicate readiness to commit)."""
     ensure_session(ctx)
     return send_command('trade_lock')
 
 
-@mcp.tool()
+@mcp.tool(name="trade_commit")
 def tmw_trade_commit(ctx: Context) -> str:
     """Commit the trade after both sides have locked."""
     ensure_session(ctx)
     return send_command('trade_commit')
 
 
-@mcp.tool()
+@mcp.tool(name="trade_cancel")
 def tmw_trade_cancel(ctx: Context) -> str:
     """Cancel the current trade."""
     ensure_session(ctx)
@@ -1185,14 +1183,14 @@ def tmw_trade_cancel(ctx: Context) -> str:
 
 # --- Social tools ---
 
-@mcp.tool()
+@mcp.tool(name="follow")
 def tmw_follow(ctx: Context, target: str) -> str:
     """Follow a player by name or ID. Pass empty string to stop."""
     ensure_session(ctx)
     return send_command('follow', target=target)
 
 
-@mcp.tool()
+@mcp.tool(name="emote")
 def tmw_emote(ctx: Context, emote_id: int) -> str:
     """Send an emote."""
     ensure_session(ctx)
@@ -1201,14 +1199,14 @@ def tmw_emote(ctx: Context, emote_id: int) -> str:
 
 # --- Character tools ---
 
-@mcp.tool()
+@mcp.tool(name="stat")
 def tmw_stat(ctx: Context, stat_name: str) -> str:
     """Increase a stat: str, agi, vit, int, dex, or luk."""
     ensure_session(ctx)
     return send_command('stat', stat_name=stat_name)
 
 
-@mcp.tool()
+@mcp.tool(name="map")
 def tmw_map(ctx: Context, radius: int = 10) -> str:
     """Show ASCII minimap around current position."""
     ensure_session(ctx)

@@ -47,7 +47,7 @@ Verify with `claude mcp list`; remove with `claude mcp remove tmw`.
 
 ### Other hosts (no wake-ups)
 
-The tool surface is identical across hosts; what you lose without Claude Code is just the wake-up channel, the `tmw_*` tools all work the same. Pick whichever fits your workflow.
+The tool surface is identical across hosts; what you lose without Claude Code is just the wake-up channel, every `tmw` tool itself works the same. Pick whichever fits your workflow.
 
 **Claude Desktop, Cursor, Cline.** Same `mcpServers` shape as Claude Code, just in a different config file:
 
@@ -101,9 +101,9 @@ For the CLI hosts: `claude mcp add -e TMW_CREDENTIALS_FILE=/home/you/credentials
 
 If you'd rather not have a `credentials.json` on disk at all, pass `TMW_USERNAME`, `TMW_PASSWORD`, and `TMW_CHAR_NAME` in the host's `env` block directly. Mind that those secrets then live inside each host's config file, which is usually plaintext and sometimes inside a workspace dir that's easy to commit by accident.
 
-### Self-restart via `tmw_restart`
+### Self-restart via `restart`
 
-`tmw-mcp` is fronted by a thin stdio shim that owns the actual game-client daemon as a subprocess. Calling `tmw_restart` sends a clean quit to the map server, waits for the server's account-online entry to clear, and respawns the daemon, all without dropping the MCP session. The standard MCP `tools/listChanged` notification fires after the restart so any host re-syncs. It pairs especially well with Claude Code, where the conversation context survives the restart and you get a tight "fix bug, restart, verify" loop in one session.
+`tmw-mcp` is fronted by a thin stdio shim that owns the actual game-client daemon as a subprocess. Calling the `restart` tool sends a clean quit to the map server, waits for the server's account-online entry to clear, and respawns the daemon, all without dropping the MCP session. The standard MCP `tools/listChanged` notification fires after the restart so any host re-syncs. It pairs especially well with Claude Code, where the conversation context survives the restart and you get a tight "fix bug, restart, verify" loop in one session.
 
 ## Configuration
 
@@ -164,7 +164,7 @@ Game data (maps, items, monsters) is fetched from the server's update host on fi
 
 The TMW protocol is binary, little-endian, over TCP. Three servers in sequence: login (default 6901), character (6122), map (5122). After a successful login the server emits a `SMSG_UPDATE_HOST` (0x0063) packet pointing at a small `resources.xml` manifest of ZIP files; the client downloads, hash-verifies (adler32), and presents them as a read-only overlay used for map collision, item names, and monster names.
 
-The active code path is `tmw_mcp.mcp_shim` (the console-script `tmw-mcp`), a thin stdio proxy that owns a daemon subprocess running `tmw_mcp.mcp_server`. The shim survives daemon restarts; the daemon owns the actual game connection. Inside the daemon, a single `GameClient` (`tmw_mcp.game`) walks the login handshake and dispatches packets, while a thin MCP layer exposes every action as a `tmw_*` tool.
+The active code path is `tmw_mcp.mcp_shim` (the console-script `tmw-mcp`), a thin stdio proxy that owns a daemon subprocess running `tmw_mcp.mcp_server`. The shim survives daemon restarts; the daemon owns the actual game connection. Inside the daemon, a single `GameClient` (`tmw_mcp.game`) walks the login handshake and dispatches packets, while a thin MCP layer exposes every action as an MCP tool under the `tmw` namespace.
 
 Game data layout, packet definitions, and the NPC dialog state machine are documented in `CLAUDE.md`.
 
