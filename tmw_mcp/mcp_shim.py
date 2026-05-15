@@ -3,7 +3,7 @@
 TMW MCP shim: a tiny proxy that owns the MCP stdio connection to Claude Code
 and forwards everything to a daemon subprocess (``mcp_server.py --shim``).
 
-The shim adds one new MCP tool, ``tmw_restart``, which:
+The shim adds one new MCP tool, ``restart``, which:
 
 1. Sends a JSON-RPC ``quit`` request to the daemon (which then sends CMSG_QUIT
    to the TMW map server and exits cleanly).
@@ -26,8 +26,7 @@ The shim is also responsible for:
   ``notifications/claude/channel`` messages.
 
 Usage (via ``.mcp.json``):
-    { "mcpServers": { "tmw-bot": { "command": ".venv/bin/python",
-        "args": ["client/mcp_shim.py"] } } }
+    { "mcpServers": { "tmw": { "command": "tmw-mcp" } } }
 """
 
 from __future__ import annotations
@@ -55,7 +54,7 @@ log = logging.getLogger('mcp_shim')
 
 CLIENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Escalation timings for tmw_restart (overridable by tests).
+# Escalation timings for the `restart` tool (overridable by tests).
 QUIT_GRACE_SECONDS = 5.0
 SIGTERM_GRACE_SECONDS = 5.0
 SIGKILL_RECOVERY_SECONDS = 15.0
@@ -420,11 +419,11 @@ async def run_shim(proxy: DaemonProxy | None = None) -> None:
         log.exception('Initial daemon start failed')
         raise
 
-    server: Server = Server('tmw-bot', instructions=(
-        'TMW game bot for The Mana World MMORPG. Use tmw_state to see the '
-        'game world, then use other tools to act. Channel notifications '
-        'will alert you to chat messages, NPC dialogs, combat, and map '
-        'changes.'
+    server: Server = Server('tmw', instructions=(
+        'TMW game bot for The Mana World MMORPG. Use the `state` tool to '
+        'see the game world, then use other tools to act. Channel '
+        'notifications will alert you to chat messages, NPC dialogs, '
+        'combat, and map changes.'
     ))
 
     def _tools_as_mcp() -> list[types.Tool]:
@@ -437,7 +436,7 @@ async def run_shim(proxy: DaemonProxy | None = None) -> None:
                 inputSchema=t.get('inputSchema')
                 or {'type': 'object', 'properties': {}},
             ))
-        # Synthesize tmw_restart locally; it is not forwarded to the daemon.
+        # Synthesize `restart` locally; it is not forwarded to the daemon.
         r = _build_restart_tool()
         out.append(types.Tool(
             name=r['name'],

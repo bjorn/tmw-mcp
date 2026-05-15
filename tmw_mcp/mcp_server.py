@@ -1224,7 +1224,7 @@ def tmw_map(ctx: Context, radius: int = 10) -> str:
 # Requests (parent -> daemon), one JSON object per line:
 #   {"jsonrpc":"2.0","id":N,"method":"list_tools","params":{}}
 #   {"jsonrpc":"2.0","id":N,"method":"call_tool",
-#    "params":{"name":"tmw_say","arguments":{"message":"hi"}}}
+#    "params":{"name":"say","arguments":{"message":"hi"}}}
 #   {"jsonrpc":"2.0","id":N,"method":"quit","params":{}}
 #
 # Responses (daemon -> parent), one JSON object per line, same id:
