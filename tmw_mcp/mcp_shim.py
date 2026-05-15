@@ -122,7 +122,8 @@ class DaemonProxy:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=self.env,
-            cwd=CLIENT_DIR,
+            # Inherit the shim's cwd (whatever the MCP host launched us
+            # from). The daemon uses cwd to find credentials.json.
         )
         self._pending = {}
         self._next_id = 1

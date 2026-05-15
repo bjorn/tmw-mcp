@@ -29,9 +29,12 @@ logging.basicConfig(
 )
 logging.getLogger('net').setLevel(logging.WARNING)
 
-# Package directory (also used as the writable runtime dir for logs/state).
+# Package directory. Used only for resolving package-local resources;
+# logs and state go to tmw_mcp.paths.state_dir(), not here. We do NOT
+# chdir into it: doing so would override whatever cwd the MCP host
+# launched us from (e.g. the user's project root), which is where
+# `credentials.json` is normally found.
 CLIENT_DIR = os.path.dirname(os.path.abspath(__file__))
-os.chdir(CLIENT_DIR)
 
 from mcp.server.fastmcp import FastMCP, Context
 from mcp.types import JSONRPCNotification, JSONRPCMessage
