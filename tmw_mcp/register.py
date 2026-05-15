@@ -43,8 +43,9 @@ def main():
     parser.add_argument('--gender', '-g', default='M', choices=['M', 'F'])
     parser.add_argument('--char-name', default='Thorbot',
                         help='Character name to create')
-    parser.add_argument('--char-slot', type=int, default=0,
-                        help='Character slot (0-2)')
+    parser.add_argument('--char-slot', type=int, default=None,
+                        help='Character slot to create the character in '
+                             '(0-8). Defaults to the first free slot.')
     parser.add_argument('--credentials-file', default='credentials.json',
                         help='Where to save credentials')
     parser.add_argument('--verbose', '-v', action='store_true')
@@ -110,14 +111,25 @@ def main():
         client.disconnect()
         return 1
 
-    # Create character if none exist
-    if not client.characters:
-        print(f'Creating character "{args.char_name}"...')
+    # Create the requested character if it isn't already on the account.
+    existing_names = {c.char_name for c in client.characters}
+    if args.char_name not in existing_names:
+        if args.char_slot is None:
+            used = {c.char_num for c in client.characters}
+            slot = next((s for s in range(9) if s not in used), None)
+            if slot is None:
+                print('All 9 character slots are full. Delete a character '
+                      'in the reference client and try again.')
+                client.disconnect()
+                return 1
+        else:
+            slot = args.char_slot
+        print(f'Creating character "{args.char_name}" in slot {slot}...')
         from .packets import build_char_create
         # Balanced starting stats: must sum to 30 (server default)
         stats = (5, 5, 5, 5, 5, 5)  # str, agi, vit, int, dex, luk
         client.char_conn.send_packet(
-            build_char_create(args.char_name, stats, args.char_slot,
+            build_char_create(args.char_name, stats, slot,
                               hair_color=5, hair_style=3)
         )
         for _ in range(5):
@@ -139,7 +151,7 @@ def main():
                 client.disconnect()
                 return 1
     else:
-        print(f'Account already has {len(client.characters)} character(s)')
+        print(f'Character "{args.char_name}" already exists on this account.')
 
     # Save credentials
     creds = {
@@ -147,9 +159,7 @@ def main():
         'port': args.port,
         'username': args.user,
         'password': password,
-        'gender': args.gender,
         'char_name': args.char_name,
-        'char_slot': args.char_slot,
         'update_host': client.update_host,
     }
     save_credentials(args.credentials_file, creds)

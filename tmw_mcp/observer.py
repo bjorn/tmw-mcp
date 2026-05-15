@@ -21,7 +21,7 @@ with open('observer_creds.json') as f:
 
 client = GameClient(creds['server'], creds['port'])
 if not client.full_login(creds['username'], creds['password'],
-                         creds.get('char_slot', 0),
+                         creds.get('char_name', ''),
                          world=creds.get('world', '')):
     print('Observer login failed!')
     exit(1)

@@ -3,7 +3,7 @@
 TMW CLI Client - Interactive text-based client for The Mana World.
 
 Usage:
-    python main.py [--server HOST] [--port PORT] [--user USER] [--password PASS] [--char SLOT]
+    python main.py [--server HOST] [--port PORT] [--user USER] [--password PASS] [--char NAME]
 """
 
 import argparse
@@ -323,8 +323,8 @@ def main():
                         help='Login server port')
     parser.add_argument('--user', '-u', help='Account username')
     parser.add_argument('--password', '-p', help='Account password')
-    parser.add_argument('--char', '-c', type=int, default=0,
-                        help='Character slot (default: 0)')
+    parser.add_argument('--char', '-c', default='',
+                        help='Character name (default: account\'s first character)')
     parser.add_argument('--credentials', default='credentials.json',
                         help='Path to credentials JSON file')
     parser.add_argument('--verbose', '-v', action='store_true',
@@ -349,7 +349,7 @@ def main():
     args.password = creds.get('password')
     args.server = creds.get('server', args.server)
     args.port = creds.get('port', args.port)
-    args.char = creds.get('char_slot', args.char)
+    args.char = creds.get('char_name', args.char)
     args.world = creds.get('world', '')
 
     if not args.user:

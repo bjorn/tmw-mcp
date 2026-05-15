@@ -11,8 +11,7 @@ Precedence (highest first):
    caller's parsed CLI flags).
 2. Environment variables.
 3. ``credentials.json`` at the given path (if it exists and parses).
-4. Built-in defaults: ``server.themanaworld.org:6901``, slot 0,
-   gender ``M``, world ``''``.
+4. Built-in defaults: ``server.themanaworld.org:6901``, world ``''``.
 
 Env vars (all optional):
 
@@ -20,9 +19,7 @@ Env vars (all optional):
 * ``TMW_PASSWORD``
 * ``TMW_SERVER`` (host or ``host:port``)
 * ``TMW_PORT``
-* ``TMW_CHAR_SLOT`` (0, 1, 2)
 * ``TMW_CHAR_NAME``
-* ``TMW_GENDER`` (``M`` or ``F``)
 * ``TMW_WORLD`` (optional world tag, blank for default)
 * ``TMW_CREDENTIALS_FILE`` (absolute path to a credentials.json; wins
   over any path the caller passes, and lets an MCP host config point
@@ -43,8 +40,6 @@ DEFAULT_FILE = 'credentials.json'
 _DEFAULTS: dict = {
     'server': 'server.themanaworld.org',
     'port': 6901,
-    'char_slot': 0,
-    'gender': 'M',
     'world': '',
 }
 
@@ -54,9 +49,7 @@ _ENV_MAP: list[tuple[str, str, type]] = [
     ('password', 'TMW_PASSWORD', str),
     # ``TMW_SERVER`` is special: it may include a port suffix.
     ('port', 'TMW_PORT', int),
-    ('char_slot', 'TMW_CHAR_SLOT', int),
     ('char_name', 'TMW_CHAR_NAME', str),
-    ('gender', 'TMW_GENDER', str),
     ('world', 'TMW_WORLD', str),
 ]
 

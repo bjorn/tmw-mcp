@@ -749,7 +749,7 @@ def _connect_game():
 
     client = GameClient(creds['server'], creds['port'])
     if not client.full_login(creds['username'], creds['password'],
-                             creds.get('char_slot', 0),
+                             creds.get('char_name', ''),
                              world=creds.get('world', '')):
         raise RuntimeError('Game login failed!')
 

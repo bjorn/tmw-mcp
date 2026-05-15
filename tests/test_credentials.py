@@ -20,7 +20,7 @@ from tmw_mcp.credentials import load_credentials
 
 _TMW_VARS = (
     'TMW_USERNAME', 'TMW_PASSWORD', 'TMW_SERVER', 'TMW_PORT',
-    'TMW_CHAR_SLOT', 'TMW_CHAR_NAME', 'TMW_GENDER', 'TMW_WORLD',
+    'TMW_CHAR_NAME', 'TMW_WORLD',
     'TMW_CREDENTIALS_FILE',
 )
 
@@ -40,11 +40,11 @@ class EnvOnlyTest(unittest.TestCase):
     def test_env_vars_populate_creds(self):
         os.environ['TMW_USERNAME'] = 'alice'
         os.environ['TMW_PASSWORD'] = 'secret'
-        os.environ['TMW_CHAR_SLOT'] = '2'
+        os.environ['TMW_CHAR_NAME'] = 'Alicia'
         creds = load_credentials()
         self.assertEqual(creds['username'], 'alice')
         self.assertEqual(creds['password'], 'secret')
-        self.assertEqual(creds['char_slot'], 2)
+        self.assertEqual(creds['char_name'], 'Alicia')
         # Defaults still in place.
         self.assertEqual(creds['server'], 'server.themanaworld.org')
         self.assertEqual(creds['port'], 6901)

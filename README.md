@@ -24,6 +24,22 @@ tmw-mcp-register --user MyAccount --char-name MyCharacter
 
 This writes a `credentials.json` (`chmod 600`, owner read/write only) in the current directory. Treat it like any other secret. `tmw-mcp` looks for it in its own current working directory by default, so the simplest setup is to run the host from this same directory; otherwise point at the file explicitly with `TMW_CREDENTIALS_FILE` (covered below).
 
+### Using an existing account
+
+If you already have a TMW account and character, you can skip `tmw-mcp-register` and write `credentials.json` by hand. The full shape is:
+
+```json
+{
+  "server": "server.themanaworld.org",
+  "port": 6901,
+  "username": "MyAccount",
+  "password": "hunter2",
+  "char_name": "MyCharacter"
+}
+```
+
+Only `username` and `password` are required; the rest fall back to the defaults shown above. `char_name` picks which character on the account to log in as; omit it to use the account's first character. Remember to `chmod 600 credentials.json` so it's owner-only, and keep it out of git.
+
 ## Use it from an MCP client
 
 ### Recommended: Claude Code
@@ -117,9 +133,7 @@ If you'd rather not have a `credentials.json` on disk at all, pass `TMW_USERNAME
 | ----------------------- | ----------------------------------------------------------------------- |
 | `TMW_USERNAME`          | Account name                                                            |
 | `TMW_PASSWORD`          | Account password                                                        |
-| `TMW_CHAR_NAME`         | Character name (optional if `TMW_CHAR_SLOT` covers it)                  |
-| `TMW_CHAR_SLOT`         | Character slot index (0, 1, or 2). Default `0`.                         |
-| `TMW_GENDER`            | `M` or `F`. Only used by registration.                                  |
+| `TMW_CHAR_NAME`         | Character name. If omitted, the account's first character is used.      |
 | `TMW_SERVER`            | Login server. Accepts `host` or `host:port`. Default `server.themanaworld.org:6901`. |
 | `TMW_PORT`              | Override port only. Default `6901`.                                     |
 | `TMW_WORLD`             | World name (blank for default).                                         |

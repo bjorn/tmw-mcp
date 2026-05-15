@@ -506,8 +506,12 @@ class GameClient:
     # ------------------------------------------------------------------
 
     def full_login(self, username: str, password: str,
-                   char_slot: int = 0, world: str = '') -> bool:
-        """Perform full login: login server -> char server -> map server."""
+                   char_name: str = '', world: str = '') -> bool:
+        """Perform full login: login server -> char server -> map server.
+
+        Picks the character matching ``char_name``. When ``char_name``
+        is empty, falls back to the account's first character.
+        """
         # Step 1: Login
         login_result = self.login(username, password)
         if isinstance(login_result, LoginError):
@@ -538,23 +542,34 @@ class GameClient:
             log.warning('No characters on this account')
             return False
 
-        # Find character in requested slot and load initial stats
-        for c in self.characters:
-            self.player.char_name = c.char_name
-            self.player.base_level = c.base_level
-            self.player.job_level = c.job_level
-            self.player.base_exp = c.base_exp
-            self.player.job_exp = c.job_exp
-            self.player.zeny = c.zeny
-            self.player.hp = c.hp
-            self.player.max_hp = c.max_hp
-            self.player.sp = c.sp
-            self.player.max_sp = c.max_sp
-            if c.char_num == char_slot:
-                break
+        # Resolve the requested character (by name, or first if unspecified).
+        chosen = None
+        if char_name:
+            for c in self.characters:
+                if c.char_name == char_name:
+                    chosen = c
+                    break
+            if chosen is None:
+                have = ', '.join(c.char_name for c in self.characters)
+                log.error('No character named %r on this account (have: %s)',
+                          char_name, have)
+                return False
+        else:
+            chosen = self.characters[0]
+
+        self.player.char_name = chosen.char_name
+        self.player.base_level = chosen.base_level
+        self.player.job_level = chosen.job_level
+        self.player.base_exp = chosen.base_exp
+        self.player.job_exp = chosen.job_exp
+        self.player.zeny = chosen.zeny
+        self.player.hp = chosen.hp
+        self.player.max_hp = chosen.max_hp
+        self.player.sp = chosen.sp
+        self.player.max_sp = chosen.max_sp
 
         # Step 3: Select character
-        map_info = self.select_character(char_slot)
+        map_info = self.select_character(chosen.char_num)
         if map_info is None:
             return False
 
