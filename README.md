@@ -22,9 +22,16 @@ This writes a `credentials.json` (`chmod 600`, owner read/write only) in the cur
 
 ## Use it from an MCP client
 
-### Hosts that use a JSON config file
+### Recommended: Claude Code
 
-This covers Claude Code, Claude Desktop, Cursor, and Cline. Drop this into the right config file and restart the host.
+Claude Code is the only MCP host today that wakes the agent on `notifications/claude/channel` messages, which is how the bot surfaces chat, NPC dialog, combat damage, death, map changes, and the ferry-bell effect in real time. Without that, the bot only acts when you prompt it, which is fine for short tasks but turns the game into "ask the bot what's happening" instead of "the bot tells you." If you have a choice, use this one.
+
+```bash
+claude mcp add tmw -- tmw-mcp      # writes .mcp.json in the current project
+                                   # (or add -s user for ~/.claude.json)
+```
+
+Equivalent in JSON, drop into `.mcp.json` at your project root by hand:
 
 ```json
 {
@@ -36,44 +43,44 @@ This covers Claude Code, Claude Desktop, Cursor, and Cline. Drop this into the r
 }
 ```
 
-| Host          | Config path                                                                 |
-| ------------- | --------------------------------------------------------------------------- |
-| Claude Code   | `.mcp.json` at your project root (or `~/.claude.json` for user-level)       |
-| Claude Desktop| `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS), `%APPDATA%\Claude\claude_desktop_config.json` (Windows) |
-| Cursor        | `~/.cursor/mcp.json` (user) or `.cursor/mcp.json` (workspace)               |
-| Cline         | `cline_mcp_settings.json` (open via "Cline: MCP Servers" command in VS Code)|
+Verify with `claude mcp list`; remove with `claude mcp remove tmw`.
 
-### VS Code Copilot extension
+### Other hosts (no wake-ups)
 
-VS Code's Copilot extension uses a slightly different shape (`servers` instead of `mcpServers`, explicit `type: "stdio"`). Drop this into `.vscode/mcp.json` at the workspace root (or use "MCP: Open User Configuration" for user-level):
+The tool surface is identical across hosts; what you lose without Claude Code is just the wake-up channel, the `tmw_*` tools all work the same. Pick whichever fits your workflow.
+
+**Claude Desktop, Cursor, Cline.** Same `mcpServers` shape as Claude Code, just in a different config file:
 
 ```json
-{
-  "servers": {
-    "tmw": {
-      "type": "stdio",
-      "command": "tmw-mcp"
-    }
-  }
-}
+{ "mcpServers": { "tmw": { "command": "tmw-mcp" } } }
 ```
 
-Switch the Copilot chat panel from "Ask" to "Agent" mode; MCP tools only show up there.
+| Host          | Config path                                                                 |
+| ------------- | --------------------------------------------------------------------------- |
+| Claude Desktop| `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS), `%APPDATA%\Claude\claude_desktop_config.json` (Windows) |
+| Cursor        | `~/.cursor/mcp.json` (user) or `.cursor/mcp.json` (workspace)               |
+| Cline         | `cline_mcp_settings.json` (open via "Cline: MCP Servers" command in VS Code, or under `~/.cline/data/settings/` for the Cline CLI)|
 
-### Hosts that register via CLI
+**VS Code Copilot extension.** Different schema (`servers` not `mcpServers`, explicit `type: "stdio"`). Drop into `.vscode/mcp.json` at the workspace root (or use "MCP: Open User Configuration"):
 
-GitHub's Copilot CLI and OpenAI's Codex CLI both have a `<host> mcp add` subcommand that writes the config for you:
+```json
+{ "servers": { "tmw": { "type": "stdio", "command": "tmw-mcp" } } }
+```
+
+Switch Copilot Chat from "Ask" to "Agent" mode; MCP tools only show up there.
+
+**Copilot CLI and Codex CLI.** Same `mcp add` shape as Claude Code's:
 
 ```bash
 copilot mcp add tmw -- tmw-mcp   # writes ~/.copilot/mcp-config.json
 codex mcp add tmw -- tmw-mcp     # writes a block into ~/.codex/config.toml
 ```
 
-Verify with `copilot mcp list` / `codex mcp list`. Remove with `copilot mcp remove tmw` / `codex mcp remove tmw`. If `tmw-mcp` isn't on your `PATH` (e.g. it's only in a specific venv), use the absolute path after the `--`.
+Verify with `<host> mcp list`; remove with `<host> mcp remove tmw`. If `tmw-mcp` isn't on `PATH` (e.g. it's only in a specific venv), use the absolute path after the `--`.
 
 ### When credentials.json isn't in the host's cwd
 
-Workspace-aware hosts (Claude Code, Cursor, Cline, VS Code Copilot) launch `tmw-mcp` with the workspace as cwd, so a `credentials.json` at the workspace root is found automatically. The CLI hosts (Copilot CLI, Codex CLI) inherit your terminal's cwd. If neither lines up with where `credentials.json` lives (Claude Desktop on macOS, for instance), pass an absolute path via `TMW_CREDENTIALS_FILE`:
+Claude Code, Cursor, Cline, and VS Code Copilot launch `tmw-mcp` with the workspace as cwd, so a `credentials.json` at the workspace root is found automatically. The CLI hosts (Claude Code CLI, Copilot CLI, Codex CLI) inherit your terminal's cwd. If neither lines up with where `credentials.json` lives (Claude Desktop on macOS, for instance), pass an absolute path via `TMW_CREDENTIALS_FILE`:
 
 ```json
 {
@@ -88,17 +95,15 @@ Workspace-aware hosts (Claude Code, Cursor, Cline, VS Code Copilot) launch `tmw-
 }
 ```
 
-Same `--env TMW_CREDENTIALS_FILE=...` for the CLI hosts.
+For the CLI hosts: `claude mcp add -e TMW_CREDENTIALS_FILE=/home/you/credentials.json tmw -- tmw-mcp` (and `--env` instead of `-e` for `copilot` / `codex`).
 
 ### Without a credentials file
 
 If you'd rather not have a `credentials.json` on disk at all, pass `TMW_USERNAME`, `TMW_PASSWORD`, and `TMW_CHAR_NAME` in the host's `env` block directly. Mind that those secrets then live inside each host's config file, which is usually plaintext and sometimes inside a workspace dir that's easy to commit by accident.
 
-### Two features worth knowing about
+### Self-restart via `tmw_restart`
 
-* **Reactive wakeups (Claude Code only).** Chat messages, NPC dialog, combat damage, death, map changes, and ferry-bell effects are pushed as `notifications/claude/channel` messages so an idle agent wakes within seconds instead of polling. This is a Claude Code extension; other MCP hosts will silently ignore the notifications. Every `tmw_*` tool itself works identically across hosts.
-
-* **Self-restart via `tmw_restart`.** `tmw-mcp` is fronted by a thin stdio shim that owns the actual game-client daemon as a subprocess. Calling `tmw_restart` sends a clean quit to the map server, waits for the server's account-online entry to clear, and respawns the daemon, all without dropping the MCP session. The standard MCP `tools/listChanged` notification fires after the restart so the host re-syncs. It pairs especially well with Claude Code, where the conversation context survives the restart and you get a tight "fix bug, restart, verify" loop in one session.
+`tmw-mcp` is fronted by a thin stdio shim that owns the actual game-client daemon as a subprocess. Calling `tmw_restart` sends a clean quit to the map server, waits for the server's account-online entry to clear, and respawns the daemon, all without dropping the MCP session. The standard MCP `tools/listChanged` notification fires after the restart so any host re-syncs. It pairs especially well with Claude Code, where the conversation context survives the restart and you get a tight "fix bug, restart, verify" loop in one session.
 
 ## Configuration
 
