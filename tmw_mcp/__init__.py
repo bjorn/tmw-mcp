@@ -12,4 +12,4 @@ See README.md for usage. The most useful entry points are:
   ``tmw-mcp-register``.
 """
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"

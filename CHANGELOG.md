@@ -4,6 +4,19 @@ All notable changes to `tmw-mcp` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2]
+
+### Fixed
+- Item and monster name lookups now walk the `<include name="..."/>`
+  chain starting at `items.xml` / `monsters.xml`, so every per-item and
+  per-monster XML file shipped under `items/<category>/` and
+  `monsters/<category>/` lands in the in-memory caches. Previously
+  `items.py` walked only the top level of `items/` -- which contains
+  only subdirectories -- and resolved zero items, so inventory, floor
+  drops, trade dialogs, shop listings, and the dashboard all showed
+  `item#NNN` instead of real names. Cache size jumps from 0 to ~1150
+  items.
+
 ## [0.1.1]
 
 ### Changed
