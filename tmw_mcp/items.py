@@ -30,6 +30,11 @@ def load_item_names():
     one item has been registered. If the resource manager is not ready
     yet (no update host fetched, no override dir), this returns quietly
     and the next lookup will simply fall back to the synthetic name.
+
+    The TMW client data ships per-item XML leaves under
+    ``items/<category>/itemNNNN_X.xml`` reached via a chain of
+    ``<include name="..."/>`` directives starting at ``items.xml``. We
+    follow that chain here so every reachable item lands in the cache.
     """
     global _loaded
     if _loaded:
@@ -38,23 +43,46 @@ def load_item_names():
     if not rm.ready():
         return
 
-    # Flat layout: a single items.xml at the overlay root.
-    try:
-        _parse_xml(rm.open('items.xml'))
-    except FileNotFoundError:
-        pass
-
-    # Alternative layout: items/*.xml. Walk one level only.
-    for name in rm.list_files('items'):
-        if not name.endswith('.xml'):
-            continue
-        try:
-            _parse_xml(rm.open(f'items/{name}'))
-        except FileNotFoundError:
-            continue
+    _load_with_includes('items.xml')
 
     if _name_cache:
         _loaded = True
+
+
+def _load_with_includes(path: str) -> None:
+    """Resolve ``<include name="..."/>`` directives recursively from ``path``.
+
+    Each visited XML file is also passed through :func:`_parse_xml` to
+    pick up any inline ``<item>`` entries (leaves), so include hubs that
+    happen to also carry items still work. Missing referenced files are
+    logged at debug level and skipped -- the manifest is not perfectly
+    consistent across overlays.
+    """
+    rm = default_manager()
+    visited: set[str] = set()
+    stack: list[str] = [path]
+    while stack:
+        current = stack.pop()
+        if current in visited:
+            continue
+        visited.add(current)
+        try:
+            data = rm.open(current)
+        except FileNotFoundError:
+            log.debug('include not found: %s', current)
+            continue
+        try:
+            root = ET.fromstring(data)
+        except ET.ParseError:
+            log.debug('parse error in %s', current)
+            continue
+        # Parse any inline <item> entries on this node.
+        _parse_root(root)
+        # Queue any <include> children.
+        for inc in root.iter('include'):
+            name = inc.get('name')
+            if name and name not in visited:
+                stack.append(name)
 
 
 def _parse_xml(data: bytes) -> None:
@@ -62,6 +90,10 @@ def _parse_xml(data: bytes) -> None:
         root = ET.fromstring(data)
     except ET.ParseError:
         return
+    _parse_root(root)
+
+
+def _parse_root(root: ET.Element) -> None:
     for item in root.iter('item'):
         item_id = item.get('id')
         name = item.get('name')
