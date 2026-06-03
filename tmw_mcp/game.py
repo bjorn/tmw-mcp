@@ -15,7 +15,6 @@ import threading
 import time
 from dataclasses import dataclass, field
 
-from .monsters import monster_name
 from .net import Connection
 from .resources import default_manager
 from .packets import (
@@ -624,8 +623,6 @@ class GameClient:
             b.direction = pkt.direction
             if pkt.level:
                 b.level = pkt.level
-            if not b.name and pkt.species >= 1002:
-                b.name = monster_name(pkt.species)
             self.beings[pkt.block_id] = b
             if pkt.block_id == self.account_id:
                 self.player.x = pkt.x
@@ -645,15 +642,16 @@ class GameClient:
             b.max_hp = pkt.max_hp
             if pkt.level:
                 b.level = pkt.level
-            if not b.name and pkt.species >= 1002:
-                b.name = monster_name(pkt.species)
             self.beings[pkt.block_id] = b
             return ('being_move', pkt)
 
         elif isinstance(pkt, BeingSpawn):
-            name = monster_name(pkt.species) if pkt.species >= 1002 else ''
+            # Leave name empty; resolve the species fallback live at display
+            # time via being_display_name() so it self-heals once the
+            # monsters.xml overlay finishes downloading. b.name is only set
+            # from an authoritative server name response (0x0095).
             b = Being(block_id=pkt.block_id, species=pkt.species,
-                     x=pkt.x, y=pkt.y, speed=pkt.speed, name=name)
+                     x=pkt.x, y=pkt.y, speed=pkt.speed)
             self.beings[pkt.block_id] = b
             return ('being_spawn', pkt)
 

@@ -184,8 +184,9 @@ def run_interactive(client: GameClient):
                 beings = client.nearby_beings()
                 if not beings:
                     print('  No beings nearby.')
+                from .monsters import being_display_name
                 for b in beings[:20]:
-                    name = b.name or f'species:{b.species}'
+                    name = being_display_name(b) or f'species:{b.species}'
                     hp_str = f' HP:{b.hp}/{b.max_hp}' if b.max_hp > 0 else ''
                     print(f'  [{b.block_id}] {name} at ({b.x},{b.y}){hp_str}')
                     if not b.name:

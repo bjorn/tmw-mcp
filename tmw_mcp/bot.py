@@ -81,9 +81,9 @@ def write_state(client: GameClient):
         '',
         'nearby_beings:',
     ]
-    from .monsters import monster_name
+    from .monsters import being_display_name
     for b in client.nearby_beings(radius=30):
-        name = b.name or monster_name(b.species)
+        name = being_display_name(b)
         hp_str = f' HP:{b.hp}/{b.max_hp}' if b.max_hp > 0 else ''
         lines.append(f'  [{b.block_id}] {name} at ({b.x},{b.y}){hp_str}')
     lines.append('')
@@ -656,8 +656,11 @@ def run_auto_behaviors(client: GameClient, tick_count: int):
         best = None
         best_dist = 999
         hunt_leash = 20  # max distance from home to chase monsters
+        from .monsters import being_display_name
         for b in client.beings.values():
-            if b.name.lower() in hunt_names and b.max_hp > 0:
+            # Resolve the species fallback live so a monster that was visible
+            # before monsters.xml loaded can still be matched by name.
+            if being_display_name(b).lower() in hunt_names and b.max_hp > 0:
                 # Only chase monsters within leash range of home
                 home_dist = abs(b.x - hx) + abs(b.y - hy)
                 if home_dist > hunt_leash:

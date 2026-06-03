@@ -225,6 +225,26 @@ def _being_kind(b) -> str:
     return 'npc'
 
 
+def _being_name(b) -> str:
+    """Display name for a being, resolving the monster species fallback live.
+
+    ``b.name`` is only populated from an authoritative server name response,
+    so monsters seen before ``monsters.xml`` loaded carry an empty name; fall
+    back to the species table here (it self-heals once the overlay loads).
+    """
+    name = getattr(b, 'name', '') or ''
+    if name:
+        return name
+    species = getattr(b, 'species', 0)
+    if species >= 1002:
+        try:
+            from .monsters import monster_name
+            return monster_name(species)
+        except Exception:
+            return ''
+    return ''
+
+
 def build_snapshot(client, item_name: Callable[[int], str] | None = None) -> dict:
     """Build a JSON-serialisable snapshot dict from a live GameClient.
 
@@ -280,7 +300,7 @@ def build_snapshot(client, item_name: Callable[[int], str] | None = None) -> dic
         entry = {
             'id': bid,
             'kind': kind,
-            'name': getattr(b, 'name', '') or '',
+            'name': _being_name(b),
             'x': getattr(b, 'x', 0),
             'y': getattr(b, 'y', 0),
             'direction': getattr(b, 'direction', 0),

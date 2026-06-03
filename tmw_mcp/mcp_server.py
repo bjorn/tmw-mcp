@@ -46,7 +46,7 @@ from .bot import (
 )
 from .items import item_name
 from .maps import load_collision
-from .monsters import monster_name
+from .monsters import being_display_name
 from .paths import bot_log_path, mcp_startup_log_path
 
 log = logging.getLogger('mcp_server')
@@ -568,7 +568,7 @@ def game_loop():
                     xp_gained = max(0, xp_now - last_exp[0]) if last_exp[0] > 0 else 0
                     last_exp[0] = xp_now
                     xp_str = f' (+{xp_gained} EXP)' if xp_gained > 0 else ''
-                    kill_name = getattr(killed, 'name', '') or monster_name(getattr(killed, 'species', 0)) or f'#{data.block_id}'
+                    kill_name = being_display_name(killed) or f'#{data.block_id}'
                     if xp_gained > 0:
                         push_notification(f'[Kill] {kill_name}{xp_str}')
                     else:
@@ -590,7 +590,7 @@ def game_loop():
                 # Enrich combat notifications with HP info
                 if etype == 'action' and data.damage > 0:
                     src = client.beings.get(data.src_id) or last_beings.get(data.src_id)
-                    src_name = src.name if src and src.name else f'#{data.src_id}'
+                    src_name = (being_display_name(src) if src else '') or f'#{data.src_id}'
                     crit = ' CRIT' if data.damage_type == 0x0a else ''
                     notif_msg = f'[Combat] {src_name} hit you for {data.damage}{crit} (HP: {client.player.hp}/{client.player.max_hp})'
                 elif etype == 'being_remove' and data.reason == 1 and data.block_id == client.account_id:
@@ -675,7 +675,7 @@ def format_game_state(client: GameClient) -> str:
         'nearby_beings:',
     ]
     for b in client.nearby_beings(radius=30):
-        name = b.name or monster_name(b.species)
+        name = being_display_name(b)
         hp_str = f' HP:{b.hp}/{b.max_hp}' if b.max_hp > 0 else ''
         lv_str = f' lv{b.level}' if b.level > 0 else ''
         lines.append(f'  [{b.block_id}] {name} at ({b.x},{b.y}){lv_str}{hp_str}')

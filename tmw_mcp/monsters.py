@@ -71,6 +71,21 @@ def monster_name(species_id: int) -> str:
     return _name_cache.get(species_id, f'species:{species_id}')
 
 
+def being_display_name(b) -> str:
+    """Resolve a being's display name, falling back to the species table.
+
+    The fallback is resolved live (never frozen into ``b.name``), so a
+    monster that was visible before ``monsters.xml`` finished downloading
+    self-heals to its real name as soon as the table loads. ``b.name`` is
+    only ever set from an authoritative server name response (0x0095).
+    """
+    if b.name:
+        return b.name
+    if b.species >= 1002:
+        return monster_name(b.species)
+    return ''
+
+
 def _reset_for_tests() -> None:
     global _loaded
     _name_cache.clear()
