@@ -740,6 +740,7 @@ class GameClient:
             self.player.y = pkt.y
             self.beings.clear()
             self.floor_items.clear()
+            # A warp does not end the NPC session (TMWA keeps npc_id).
             self._cancel_path()
             self.map_conn.send_packet(build_map_loaded())
             return ('map_change', pkt)
@@ -1255,15 +1256,26 @@ class GameClient:
         """Sell items: [(index, count), ...]"""
         self.map_conn.send_packet(build_npc_sell(items))
 
-    def click_npc(self, npc_id: int):
-        """Click on an NPC."""
-        self.npc_id = npc_id
-        self.npc_dialog_open = True
+    def _reset_npc_dialog(self):
+        """Clear all NPC dialog state back to the defaults from __init__.
+
+        Called when we acknowledge closing a dialog, on a map warp (the
+        being is gone), or when starting a fresh click on an NPC.
+        """
+        self.npc_id = 0
+        self.npc_dialog_open = False
         self.npc_dialog.clear()
         self.npc_choices.clear()
         self.npc_waiting_next = False
         self.npc_waiting_close = False
         self.npc_waiting_choice = False
+        self.npc_waiting_input = ''
+
+    def click_npc(self, npc_id: int):
+        """Click on an NPC."""
+        self._reset_npc_dialog()
+        self.npc_id = npc_id
+        self.npc_dialog_open = True
         self.map_conn.send_packet(build_npc_click(npc_id))
 
     def close_storage(self):
@@ -1282,6 +1294,9 @@ class GameClient:
         if self.npc_waiting_close:
             self.npc_waiting_close = False
             self.map_conn.send_packet(build_npc_close(self.npc_id))
+            # The dialog is done once we acknowledge the close, so drop any
+            # lingering state (otherwise the dashboard/state keep showing it).
+            self._reset_npc_dialog()
 
     def npc_choose(self, choice: int):
         """Choose from NPC menu (1-based index)."""
