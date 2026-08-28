@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tmw-mcp"
-version = "0.1.2"
+version = "0.1.3"
 description = "A Python client for The Mana World, exposed as an MCP server so an AI agent can play the game."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -38,9 +38,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://git.sr.ht/~thorbjorn/tmw-mcp"
-Source = "https://git.sr.ht/~thorbjorn/tmw-mcp"
-Issues = "https://todo.sr.ht/~thorbjorn/tmw-mcp"
+Homepage = "https://github.com/bjorn/tmw-mcp"
+Source = "https://github.com/bjorn/tmw-mcp"
+Issues = "https://github.com/bjorn/tmw-mcp/issues"
 
 [project.scripts]
 tmw-mcp = "tmw_mcp.mcp_shim:main"

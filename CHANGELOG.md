@@ -4,6 +4,24 @@ All notable changes to `tmw-mcp` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3]
+
+### Changed
+- The project moved from sourcehut to
+  [github.com/bjorn/tmw-mcp](https://github.com/bjorn/tmw-mcp). Package
+  metadata and the README clone URL point there now.
+
+### Fixed
+- Monster names no longer freeze as `species:NNNN`. `monsters.xml`
+  downloads on a background thread after login, so beings seen right
+  after login used to cache the fallback string permanently. The
+  fallback is now resolved live at display time and self-heals once the
+  name table finishes loading.
+- Closing an NPC dialog now clears the dialog state, so the dashboard
+  and MCP state output stop showing the previous NPC's dialog box. A map
+  warp still preserves it, matching tmwAthena's behaviour of keeping
+  `sd->npc_id` across `pc_setpos`.
+
 ## [0.1.2]
 
 ### Fixed
