@@ -403,9 +403,18 @@ def _spec(name: str, description: str,
             'description': description, 'parameters': params}
 
 
-_str = lambda d: {'type': 'string', 'description': d}
-_int = lambda d: {'type': 'integer', 'description': d}
-_bool = lambda d: {'type': 'boolean', 'description': d}
+def _typed(schema_type):
+    def prop(description, default=None):
+        out = {'type': schema_type, 'description': description}
+        if default is not None:
+            out['default'] = default
+        return out
+    return prop
+
+
+_str = _typed('string')
+_int = _typed('integer')
+_bool = _typed('boolean')
 
 TOOL_SPECS: list[dict] = [
     _spec('state', 'Get current game state: character info, position, '
@@ -422,7 +431,8 @@ TOOL_SPECS: list[dict] = [
           {'message': _str('The line to speak')}, ['message'],
           command='party_message'),
     _spec('party_leave', 'Leave the current party.'),
-    _spec('walk', 'Walk to coordinates (x, y) using pathfinding.',
+    _spec('walk', 'Walk to coordinates (x, y) using A* pathfinding. '
+          'Sends a channel notification on arrival or failure.',
           {'x': _int('X coordinate'), 'y': _int('Y coordinate')},
           ['x', 'y']),
     _spec('face', 'Change facing direction (0=south, 2=west, 4=north, 6=east).',
@@ -433,67 +443,91 @@ TOOL_SPECS: list[dict] = [
           {'target_id': _int('Being ID')}, ['target_id']),
     _spec('stop_attack', 'Stop auto-attack and hunting.',
           command='stopattack'),
-    _spec('hunt', 'Continuously hunt monster(s) by name. Pass empty string '
-          'to stop.', {'monster_name': _str('Monster name')},
+    _spec('hunt', 'Continuously hunt monster(s) by name. Comma-separated '
+          'for multiple types. Pass empty string to stop.',
+          {'monster_name': _str('Monster name')},
           ['monster_name']),
     _spec('respawn', 'Respawn after death.'),
     _spec('party_reply', 'Accept or reject a party invitation.',
-          {'account_id': _int('Account ID'), 'accept': _bool('Accept?')},
+          {'account_id': _int('Account ID'),
+           'accept': _bool('Accept?', default=True)},
           ['account_id']),
-    _spec('attack_range', 'Override weapon attack range (1=melee).',
-          {'range': _int('Attack range')}),
-    _spec('ferry_exit', 'Auto-exit the ferry after N bell rings.',
-          {'bells': _int('Bell count')}),
+    _spec('attack_range', 'Override weapon attack range (normally '
+          'auto-detected from server). 1=melee, 2=scythe/polearm.',
+          {'range': _int('Attack range', default=1)}),
+    _spec('ferry_exit', 'Auto-exit the ferry after N bell rings. E.g. '
+          'bells=1 exits at next stop, bells=2 skips one stop then exits.',
+          {'bells': _int('Bell count', default=1)}),
     _spec('pickup', 'Pick up a floor item by ID.',
           {'item_id': _int('Item ID')}, ['item_id']),
-    _spec('shop_buy', "Open a shop NPC's buy list.",
+    _spec('shop_buy', "Open a shop NPC's buy list. Use after clicking a "
+          "shop NPC (0x00c4 event). The buy list will appear in game state.",
           {'npc_id': _int('NPC ID')}, ['npc_id']),
-    _spec('shop_sell', "Open a shop NPC's sell list.",
+    _spec('shop_sell', "Open a shop NPC's sell list. Use after clicking a "
+          "shop NPC (0x00c4 event).",
           {'npc_id': _int('NPC ID')}, ['npc_id']),
-    _spec('buy', 'Buy items from shop. Must open buy list first.',
-          {'name_id': _int('Item name ID'), 'count': _int('Amount')},
+    _spec('buy', 'Buy items from shop. Must open buy list first with '
+          'tmw_shop_buy.',
+          {'name_id': _int('Item name ID'),
+           'count': _int('Amount', default=1)},
           ['name_id']),
-    _spec('sell', 'Sell items to shop. Must open sell list first.',
-          {'index': _int('Inventory index'), 'count': _int('Amount')},
+    _spec('sell', 'Sell items to shop. Must open sell list first with '
+          'tmw_shop_sell.',
+          {'index': _int('Inventory index'),
+           'count': _int('Amount', default=1)},
           ['index']),
-    _spec('equip', 'Equip or unequip an item by inventory index.',
+    _spec('equip', 'Equip an item by inventory index.',
           {'index': _int('Inventory index')}, ['index']),
     _spec('use', 'Use an item by inventory index.',
           {'index': _int('Inventory index')}, ['index']),
-    _spec('drop', 'Drop an item on the ground. Amount 0 = entire stack.',
-          {'index': _int('Inventory index'), 'amount': _int('Amount')},
+    _spec('drop', 'Drop an item on the ground. Amount 0 = drop entire '
+          'stack.',
+          {'index': _int('Inventory index'),
+           'amount': _int('Amount', default=0)},
           ['index']),
     _spec('npc', 'Click on an NPC to start dialog.',
           {'npc_id': _int('NPC ID')}, ['npc_id']),
     _spec('npc_next', 'Continue NPC dialog (click Next).', command='next'),
-    _spec('npc_close', 'Close NPC dialog.',
-          {'npc_id': _int('NPC ID, 0 = current')}, command='close'),
-    _spec('close_storage', 'Close the storage dialog.'),
+    _spec('npc_close', 'Close NPC dialog. If npc_id is 0 (default), '
+          'closes the NPC tracked by the client; pass an explicit id to '
+          'close a specific NPC when the client state is stale (e.g., '
+          'after clicking a storage NPC that never sent a dialog packet).',
+          {'npc_id': _int('NPC ID, 0 = current', default=0)},
+          command='close'),
+    _spec('close_storage', 'Send CMSG_CLOSE_STORAGE (0x00f7) to the '
+          'server. Required after clicking a storage NPC; without it, '
+          'the server leaves sd->state.storage_open set and silently '
+          'drops walks and item-use packets.'),
     _spec('npc_choose', 'Choose an NPC menu option (1-based index).',
           {'choice': _int('Option index')}, ['choice'], command='choose'),
     _spec('npc_input_str', 'Submit text input to an NPC dialog.',
           {'text': _str('Text')}, ['text']),
     _spec('npc_input_int', 'Submit integer input to an NPC dialog.',
           {'value': _int('Value')}, ['value']),
-    _spec('trade_request', 'Request a player-to-player trade.',
+    _spec('trade_request', 'Request a player-to-player trade with the '
+          'given player name.',
           {'target': _str('Player name')}, ['target']),
     _spec('trade_accept', 'Accept an incoming trade request.'),
     _spec('trade_reject', 'Reject an incoming trade request.'),
-    _spec('trade_add_item', 'Add an inventory item to the trade offer.',
-          {'index': _int('Inventory index'), 'amount': _int('Amount, 0 = all')},
+    _spec('trade_add_item', 'Add an inventory item to the trade offer '
+          '(amount=0 means entire stack).',
+          {'index': _int('Inventory index'),
+           'amount': _int('Amount, 0 = all', default=0)},
           ['index']),
     _spec('trade_add_zeny', 'Add zeny (GP) to the trade offer.',
           {'amount': _int('Amount')}, ['amount']),
-    _spec('trade_lock', 'Lock your side of the trade.'),
+    _spec('trade_lock', 'Lock your side of the trade (indicate readiness '
+          'to commit).'),
     _spec('trade_commit', 'Commit the trade after both sides have locked.'),
     _spec('trade_cancel', 'Cancel the current trade.'),
-    _spec('follow', 'Follow a player by name or ID. Empty string stops.',
+    _spec('follow', 'Follow a player by name or ID. Pass empty string '
+          'to stop.',
           {'target': _str('Player name or ID')}, ['target']),
-    _spec('emote', 'Show an emote sprite above the character.',
+    _spec('emote', 'Send an emote.',
           {'emote_id': _int('Emote ID from client-data emotes.xml')},
           ['emote_id']),
     _spec('stat', 'Increase a stat: str, agi, vit, int, dex, or luk.',
           {'stat_name': _str('Stat name')}, ['stat_name']),
     _spec('map', 'Show ASCII minimap around current position.',
-          {'radius': _int('View radius in tiles')}),
+          {'radius': _int('View radius in tiles', default=10)}),
 ]

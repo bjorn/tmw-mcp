@@ -10,10 +10,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `GameClient.emote(emote_id)` (and `packets.build_emote`).
 - New `tmw_mcp.commands` module exposing `execute_tool_command`,
   `format_game_state`, `format_inventory`, and `TOOL_SPECS`, a
-  JSON-schema catalog of every command matching the MCP tool surface.
-  Other programs (like tmw-npc) can drive a `GameClient` in-process
-  with the same commands the MCP server uses, and `state` and
-  `inventory` are dispatchable commands too.
+  JSON-schema catalog of every command that is now the single source
+  of truth for the tool surface: the MCP server generates its tools
+  from it, and other programs (like tmw-npc) can drive a `GameClient`
+  in-process with the same commands. `state` and `inventory` are
+  dispatchable commands too.
+
+### Changed
+- All tools now return `Game not connected` immediately when there is
+  no game connection, instead of queuing the command and timing out
+  after five seconds.
 
 ### Fixed
 - Dependency pinned to `mcp>=1.0,<2`: mcp 2.x removed

@@ -8,6 +8,7 @@ Usage (via .mcp.json):
 """
 
 import asyncio
+import inspect
 import json
 import logging
 import os
@@ -39,8 +40,7 @@ from mcp.types import JSONRPCNotification, JSONRPCMessage
 from mcp.shared.message import SessionMessage
 
 from .game import GameClient
-from .commands import (
-    execute_tool_command, format_game_state, format_inventory)
+from .commands import TOOL_SPECS, execute_tool_command
 from .bot import (
     write_log, write_chat_log, write_npc_log, write_state,
     format_event, is_wakeup_event, run_auto_behaviors,
@@ -535,347 +535,56 @@ mcp = FastMCP(
 )
 
 
-# --- Game state tool ---
-
-@mcp.tool(name="state")
-def tmw_state(ctx: Context) -> str:
-    """Get current game state: character info, position, HP/SP, nearby beings, floor items."""
-    ensure_session(ctx)
-    client = state.client
-    if not client:
-        return 'Game not connected'
-    return format_game_state(client)
-
-
-@mcp.tool(name="inventory")
-def tmw_inventory(ctx: Context) -> str:
-    """List inventory items."""
-    ensure_session(ctx)
-    client = state.client
-    if not client:
-        return 'Game not connected'
-    return format_inventory(client)
-
-
-@mcp.tool(name="online")
-def tmw_online(ctx: Context) -> str:
-    """Get list of all players currently online."""
-    ensure_session(ctx)
-    return send_command('online_list')
-
-
-# --- Chat tools ---
-
-@mcp.tool(name="say")
-def tmw_say(ctx: Context, message: str) -> str:
-    """Send a public chat message in-game."""
-    ensure_session(ctx)
-    return send_command('say', message=message)
-
-
-@mcp.tool(name="whisper")
-def tmw_whisper(ctx: Context, target: str, message: str) -> str:
-    """Send a private message to a player."""
-    ensure_session(ctx)
-    return send_command('whisper', target=target, message=message)
-
-
-@mcp.tool(name="party_chat")
-def tmw_party_chat(ctx: Context, message: str) -> str:
-    """Send a message to party members."""
-    ensure_session(ctx)
-    return send_command('party_message', message=message)
-
-
-@mcp.tool(name="party_leave")
-def tmw_party_leave(ctx: Context) -> str:
-    """Leave the current party."""
-    ensure_session(ctx)
-    return send_command('party_leave')
-
-
-# --- Movement tools ---
-
-@mcp.tool(name="walk")
-def tmw_walk(ctx: Context, x: int, y: int) -> str:
-    """Walk to coordinates (x, y) using A* pathfinding. Sends a channel notification on arrival or failure."""
-    ensure_session(ctx)
-    return send_command('walk', x=x, y=y)
-
-
-@mcp.tool(name="face")
-def tmw_face(ctx: Context, direction: int) -> str:
-    """Change facing direction (0=south, 2=west, 4=north, 6=east)."""
-    ensure_session(ctx)
-    return send_command('face', direction=direction)
-
-
-@mcp.tool(name="sit")
-def tmw_sit(ctx: Context) -> str:
-    """Sit down."""
-    ensure_session(ctx)
-    return send_command('sit')
-
-
-@mcp.tool(name="stand")
-def tmw_stand(ctx: Context) -> str:
-    """Stand up."""
-    ensure_session(ctx)
-    return send_command('stand')
-
-
-# --- Combat tools ---
-
-@mcp.tool(name="attack")
-def tmw_attack(ctx: Context, target_id: int) -> str:
-    """Attack a being by ID (starts continuous attack)."""
-    ensure_session(ctx)
-    return send_command('attack', target_id=target_id)
-
-
-@mcp.tool(name="stop_attack")
-def tmw_stop_attack(ctx: Context) -> str:
-    """Stop auto-attack and hunting."""
-    ensure_session(ctx)
-    return send_command('stopattack')
-
-
-@mcp.tool(name="hunt")
-def tmw_hunt(ctx: Context, monster_name: str) -> str:
-    """Continuously hunt monster(s) by name. Comma-separated for multiple types. Pass empty string to stop."""
-    ensure_session(ctx)
-    return send_command('hunt', monster_name=monster_name)
-
-
-@mcp.tool(name="respawn")
-def tmw_respawn(ctx: Context) -> str:
-    """Respawn after death."""
-    ensure_session(ctx)
-    return send_command('respawn')
-
-
-@mcp.tool(name="party_reply")
-def tmw_party_reply(ctx: Context, account_id: int, accept: bool = True) -> str:
-    """Accept or reject a party invitation."""
-    ensure_session(ctx)
-    return send_command('party_reply', account_id=account_id, accept=accept)
-
-
-@mcp.tool(name="attack_range")
-def tmw_attack_range(ctx: Context, range: int = 1) -> str:
-    """Override weapon attack range (normally auto-detected from server). 1=melee, 2=scythe/polearm."""
-    ensure_session(ctx)
-    return send_command('attack_range', range=range)
-
-
-@mcp.tool(name="ferry_exit")
-def tmw_ferry_exit(ctx: Context, bells: int = 1) -> str:
-    """Auto-exit the ferry after N bell rings. E.g. bells=1 exits at next stop, bells=2 skips one stop then exits."""
-    ensure_session(ctx)
-    return send_command('ferry_exit', bells=bells)
-
-
-# --- Item tools ---
-
-@mcp.tool(name="pickup")
-def tmw_pickup(ctx: Context, item_id: int) -> str:
-    """Pick up a floor item by ID."""
-    ensure_session(ctx)
-    return send_command('pickup', item_id=item_id)
-
-
-@mcp.tool(name="shop_buy")
-def tmw_shop_buy(ctx: Context, npc_id: int) -> str:
-    """Open a shop NPC's buy list. Use after clicking a shop NPC (0x00c4 event). The buy list will appear in game state."""
-    ensure_session(ctx)
-    return send_command('shop_buy', npc_id=npc_id)
-
-
-@mcp.tool(name="shop_sell")
-def tmw_shop_sell(ctx: Context, npc_id: int) -> str:
-    """Open a shop NPC's sell list. Use after clicking a shop NPC (0x00c4 event)."""
-    ensure_session(ctx)
-    return send_command('shop_sell', npc_id=npc_id)
-
-
-@mcp.tool(name="buy")
-def tmw_buy(ctx: Context, name_id: int, count: int = 1) -> str:
-    """Buy items from shop. Must open buy list first with tmw_shop_buy."""
-    ensure_session(ctx)
-    return send_command('buy', name_id=name_id, count=count)
-
-
-@mcp.tool(name="sell")
-def tmw_sell(ctx: Context, index: int, count: int = 1) -> str:
-    """Sell items to shop. Must open sell list first with tmw_shop_sell."""
-    ensure_session(ctx)
-    return send_command('sell', index=index, count=count)
-
-
-@mcp.tool(name="equip")
-def tmw_equip(ctx: Context, index: int) -> str:
-    """Equip an item by inventory index."""
-    ensure_session(ctx)
-    return send_command('equip', index=index)
-
-
-@mcp.tool(name="use")
-def tmw_use(ctx: Context, index: int) -> str:
-    """Use an item by inventory index."""
-    ensure_session(ctx)
-    return send_command('use', index=index)
-
-
-@mcp.tool(name="drop")
-def tmw_drop(ctx: Context, index: int, amount: int = 0) -> str:
-    """Drop an item on the ground. Amount 0 = drop entire stack."""
-    ensure_session(ctx)
-    return send_command('drop', index=index, amount=amount)
-
-
-# --- NPC tools ---
-
-@mcp.tool(name="npc")
-def tmw_npc(ctx: Context, npc_id: int) -> str:
-    """Click on an NPC to start dialog."""
-    ensure_session(ctx)
-    return send_command('npc', npc_id=npc_id)
-
-
-@mcp.tool(name="npc_next")
-def tmw_npc_next(ctx: Context) -> str:
-    """Continue NPC dialog (click Next)."""
-    ensure_session(ctx)
-    return send_command('next')
-
-
-@mcp.tool(name="npc_close")
-def tmw_npc_close(ctx: Context, npc_id: int = 0) -> str:
-    """Close NPC dialog. If npc_id is 0 (default), closes the NPC tracked by the client;
-    pass an explicit id to close a specific NPC when the client state is stale (e.g., after
-    clicking a storage NPC that never sent a dialog packet)."""
-    ensure_session(ctx)
-    return send_command('close', npc_id=npc_id)
-
-
-@mcp.tool(name="close_storage")
-def tmw_close_storage(ctx: Context) -> str:
-    """Send CMSG_CLOSE_STORAGE (0x00f7) to the server. Required after clicking a storage
-    NPC — without it, the server leaves sd->state.storage_open set and silently drops
-    walks and item-use packets."""
-    ensure_session(ctx)
-    return send_command('close_storage')
-
-
-@mcp.tool(name="npc_choose")
-def tmw_npc_choose(ctx: Context, choice: int) -> str:
-    """Choose an NPC menu option (1-based index)."""
-    ensure_session(ctx)
-    return send_command('choose', choice=choice)
-
-
-@mcp.tool(name="npc_input_str")
-def tmw_npc_input_str(ctx: Context, text: str) -> str:
-    """Submit text input to an NPC dialog."""
-    ensure_session(ctx)
-    return send_command('npc_input_str', text=text)
-
-
-@mcp.tool(name="npc_input_int")
-def tmw_npc_input_int(ctx: Context, value: int) -> str:
-    """Submit integer input to an NPC dialog."""
-    ensure_session(ctx)
-    return send_command('npc_input_int', value=value)
-
-
-# --- Trade tools ---
-
-@mcp.tool(name="trade_request")
-def tmw_trade_request(ctx: Context, target: str) -> str:
-    """Request a player-to-player trade with the given player name."""
-    ensure_session(ctx)
-    return send_command('trade_request', target=target)
-
-
-@mcp.tool(name="trade_accept")
-def tmw_trade_accept(ctx: Context) -> str:
-    """Accept an incoming trade request."""
-    ensure_session(ctx)
-    return send_command('trade_accept')
-
-
-@mcp.tool(name="trade_reject")
-def tmw_trade_reject(ctx: Context) -> str:
-    """Reject an incoming trade request."""
-    ensure_session(ctx)
-    return send_command('trade_reject')
-
-
-@mcp.tool(name="trade_add_item")
-def tmw_trade_add_item(ctx: Context, index: int, amount: int = 0) -> str:
-    """Add an inventory item to the trade offer (amount=0 means entire stack)."""
-    ensure_session(ctx)
-    return send_command('trade_add_item', index=index, amount=amount)
-
-
-@mcp.tool(name="trade_add_zeny")
-def tmw_trade_add_zeny(ctx: Context, amount: int) -> str:
-    """Add zeny (GP) to the trade offer."""
-    ensure_session(ctx)
-    return send_command('trade_add_zeny', amount=amount)
-
-
-@mcp.tool(name="trade_lock")
-def tmw_trade_lock(ctx: Context) -> str:
-    """Lock your side of the trade (indicate readiness to commit)."""
-    ensure_session(ctx)
-    return send_command('trade_lock')
-
-
-@mcp.tool(name="trade_commit")
-def tmw_trade_commit(ctx: Context) -> str:
-    """Commit the trade after both sides have locked."""
-    ensure_session(ctx)
-    return send_command('trade_commit')
-
-
-@mcp.tool(name="trade_cancel")
-def tmw_trade_cancel(ctx: Context) -> str:
-    """Cancel the current trade."""
-    ensure_session(ctx)
-    return send_command('trade_cancel')
-
-
-# --- Social tools ---
-
-@mcp.tool(name="follow")
-def tmw_follow(ctx: Context, target: str) -> str:
-    """Follow a player by name or ID. Pass empty string to stop."""
-    ensure_session(ctx)
-    return send_command('follow', target=target)
-
-
-@mcp.tool(name="emote")
-def tmw_emote(ctx: Context, emote_id: int) -> str:
-    """Send an emote."""
-    ensure_session(ctx)
-    return send_command('emote', emote_id=emote_id)
-
-
-# --- Character tools ---
-
-@mcp.tool(name="stat")
-def tmw_stat(ctx: Context, stat_name: str) -> str:
-    """Increase a stat: str, agi, vit, int, dex, or luk."""
-    ensure_session(ctx)
-    return send_command('stat', stat_name=stat_name)
-
-
-@mcp.tool(name="map")
-def tmw_map(ctx: Context, radius: int = 10) -> str:
-    """Show ASCII minimap around current position."""
-    ensure_session(ctx)
-    return send_command('map', radius=radius)
+# --- Tools (generated from TOOL_SPECS in tmw_mcp.commands) ---
+#
+# TOOL_SPECS is the single catalog of every game command; each spec has a
+# ``name`` (the MCP tool name), a ``command`` (the dispatch key into
+# execute_tool_command), a ``description`` and a JSON-schema
+# ``parameters`` dict. One forwarding function per spec is synthesized
+# below with a hand-built ``__signature__`` so FastMCP produces the same
+# inputSchema a hand-written wrapper would.
+
+_JSON_TYPES = {'integer': int, 'string': str, 'boolean': bool,
+               'number': float}
+
+
+def _make_tool(spec: dict):
+    """Build one MCP tool function that forwards to ``spec['command']``."""
+    cmd = spec['command']
+    required = set(spec['parameters'].get('required', []))
+    params = [inspect.Parameter(
+        'ctx', inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        annotation=Context)]
+    annotations = {'ctx': Context, 'return': str}
+    for pname, prop in spec['parameters'].get('properties', {}).items():
+        ptype = prop.get('type')
+        if ptype not in _JSON_TYPES:
+            raise ValueError(
+                f"{spec['name']}.{pname}: unsupported type {ptype!r}")
+        anno = _JSON_TYPES[ptype]
+        annotations[pname] = anno
+        default = (prop.get('default', inspect.Parameter.empty)
+                   if pname not in required else inspect.Parameter.empty)
+        params.append(inspect.Parameter(
+            pname, inspect.Parameter.KEYWORD_ONLY,
+            default=default, annotation=anno))
+
+    def tool(ctx: Context, **kw) -> str:
+        ensure_session(ctx)
+        if not state.client:
+            return 'Game not connected'
+        return send_command(cmd, **kw)
+
+    tool.__name__ = f"tmw_{spec['name']}"
+    tool.__signature__ = inspect.Signature(params, return_annotation=str)
+    tool.__annotations__ = annotations
+    return tool
+
+
+for _spec in TOOL_SPECS:
+    mcp.add_tool(_make_tool(_spec), name=_spec['name'],
+                 description=_spec['description'])
+del _spec
 
 
 # ---------------------------------------------------------------------------

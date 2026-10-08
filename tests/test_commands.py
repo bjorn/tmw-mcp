@@ -10,45 +10,55 @@ import inspect
 import os
 import sys
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from tmw_mcp.commands import TOOL_SPECS, execute_tool_command
+from tmw_mcp import mcp_server
 from tmw_mcp.mcp_server import mcp
 
 
-class TestToolSpecParity(unittest.TestCase):
-    """TOOL_SPECS must mirror the MCP tool surface exactly."""
+class TestGeneratedTools(unittest.TestCase):
+    """The MCP registry is generated from TOOL_SPECS and must mirror it."""
 
-    def test_name_sets_match(self):
-        mcp_names = {t.name for t in asyncio.run(mcp.list_tools())}
-        spec_names = {s['name'] for s in TOOL_SPECS}
-        self.assertEqual(mcp_names, spec_names)
-
-    def test_schema_parity(self):
-        mcp_tools = {t.name: t for t in asyncio.run(mcp.list_tools())}
+    def test_registered_tools_match_specs(self):
+        tools = {t.name: t for t in asyncio.run(mcp.list_tools())}
+        self.assertEqual(set(tools), {s['name'] for s in TOOL_SPECS})
         for spec in TOOL_SPECS:
             with self.subTest(tool=spec['name']):
-                mcp_schema = mcp_tools[spec['name']].inputSchema
-                spec_params = spec['parameters']
-                mcp_props = mcp_schema.get('properties', {})
-                spec_props = spec_params.get('properties', {})
-                self.assertEqual(set(mcp_props), set(spec_props))
-                for prop, spec_prop in spec_props.items():
-                    self.assertEqual(mcp_props[prop]['type'],
+                tool = tools[spec['name']]
+                self.assertEqual(tool.description, spec['description'])
+                schema = tool.inputSchema
+                props = schema.get('properties', {})
+                spec_props = spec['parameters'].get('properties', {})
+                self.assertEqual(set(props), set(spec_props))
+                for pname, spec_prop in spec_props.items():
+                    self.assertEqual(props[pname]['type'],
                                      spec_prop['type'],
-                                     f'{spec["name"]}.{prop} type')
-                self.assertEqual(set(mcp_schema.get('required', [])),
-                                 set(spec_params.get('required', [])))
+                                     f'{spec["name"]}.{pname} type')
+                    self.assertEqual(
+                        props[pname].get('default', '<absent>'),
+                        spec_prop.get('default', '<absent>'),
+                        f'{spec["name"]}.{pname} default')
+                self.assertEqual(
+                    set(schema.get('required', [])),
+                    set(spec['parameters'].get('required', [])))
 
     def test_every_command_dispatches(self):
         src = inspect.getsource(execute_tool_command)
         for spec in TOOL_SPECS:
             with self.subTest(command=spec['command']):
                 self.assertIn(f"cmd == '{spec['command']}'", src)
+
+    def test_disconnected_tool_returns_message(self):
+        spec = next(s for s in TOOL_SPECS if s['name'] == 'state')
+        fn = mcp_server._make_tool(spec)
+        with patch.object(mcp_server, 'ensure_session'), \
+                patch.object(mcp_server.state, 'client', None):
+            self.assertEqual(fn(None), 'Game not connected')
 
 
 class TestDispatchDefaults(unittest.TestCase):

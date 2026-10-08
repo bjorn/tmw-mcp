@@ -55,7 +55,7 @@ No linter or formatter is wired up. Tests insert the repo root onto `sys.path` t
 3. **Frontends**, each owning its own loop and reusing `GameClient`:
    - `tmw_mcp/main.py` - interactive REPL for humans.
    - `tmw_mcp/bot.py` - legacy file-driven bot (`cmd.txt` in, `bot_log.txt` / `bot_state.txt` out). Still works, not the primary path.
-   - `tmw_mcp/mcp_server.py` - the active path. Runs the game loop in a background thread and bridges events to MCP via an `asyncio.Queue` -> forwarder task -> `notifications/claude/channel` messages on the main async loop. Every `tmw_*` MCP tool is registered here; that file is the authoritative tool reference.
+   - `tmw_mcp/mcp_server.py` - the active path. Runs the game loop in a background thread and bridges events to MCP via an `asyncio.Queue` -> forwarder task -> `notifications/claude/channel` messages on the main async loop. Its MCP tools are generated from `TOOL_SPECS` in `tmw_mcp/commands.py`, which is the authoritative catalog of every command: add a tool by adding a spec there plus a dispatch branch in `execute_tool_command`.
 
 Internal imports use Python relative form (`from .game import ...`). External callers use `from tmw_mcp.X import ...` or the console scripts.
 
