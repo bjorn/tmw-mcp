@@ -28,7 +28,7 @@ classifiers = [
     "Topic :: Games/Entertainment :: Role-Playing",
 ]
 dependencies = [
-    "mcp>=1.0",
+    "mcp>=1.0,<2",
 ]
 
 [project.optional-dependencies]
