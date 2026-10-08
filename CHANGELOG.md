@@ -4,6 +4,21 @@ All notable changes to `tmw-mcp` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4]
+
+### Added
+- `GameClient.emote(emote_id)` (and `packets.build_emote`).
+- New `tmw_mcp.commands` module exposing `execute_tool_command`,
+  `format_game_state`, `format_inventory`, and `TOOL_SPECS`, a
+  JSON-schema catalog of every command matching the MCP tool surface.
+  Other programs (like tmw-npc) can drive a `GameClient` in-process
+  with the same commands the MCP server uses, and `state` and
+  `inventory` are dispatchable commands too.
+
+### Fixed
+- Dependency pinned to `mcp>=1.0,<2`: mcp 2.x removed
+  `mcp.server.fastmcp`, so fresh installs failed to start the server.
+
 ## [0.1.3]
 
 ### Changed
