@@ -274,14 +274,16 @@ def execute_tool_command(client: GameClient, cmd: str, kw: dict,
         return f'Requesting sell list from shop #{kw["npc_id"]}'
 
     elif cmd == 'buy':
-        items = [(kw['count'], kw['name_id'])]
+        count = kw.get('count', 1)
+        items = [(count, kw['name_id'])]
         client.buy_items(items)
-        return f'Buying {kw["count"]}x item#{kw["name_id"]}'
+        return f'Buying {count}x item#{kw["name_id"]}'
 
     elif cmd == 'sell':
-        items = [(kw['index'], kw['count'])]
+        count = kw.get('count', 1)
+        items = [(kw['index'], count)]
         client.sell_items(items)
-        return f'Selling {kw["count"]}x from slot {kw["index"]}'
+        return f'Selling {count}x from slot {kw["index"]}'
 
     elif cmd == 'equip':
         from .packets import build_equip_item, build_unequip_item
@@ -330,8 +332,9 @@ def execute_tool_command(client: GameClient, cmd: str, kw: dict,
         return f'{action} party invite from #{kw["account_id"]}'
 
     elif cmd == 'ferry_exit':
-        client._ferry_exit_at_bell = kw['bells']
-        return f'Will auto-exit ferry after {kw["bells"]} bell(s)'
+        bells = kw.get('bells', 1)
+        client._ferry_exit_at_bell = bells
+        return f'Will auto-exit ferry after {bells} bell(s)'
 
     elif cmd == 'drop':
         from .packets import build_drop_item
@@ -363,8 +366,9 @@ def execute_tool_command(client: GameClient, cmd: str, kw: dict,
         return f'{len(client.online_list)} players online:\n' + '\n'.join(lines)
 
     elif cmd == 'attack_range':
-        client._attack_range = kw['range']
-        return f'Attack range set to {kw["range"]}'
+        attack_range = kw.get('range', 1)
+        client._attack_range = attack_range
+        return f'Attack range set to {attack_range}'
 
     elif cmd == 'map':
         cmap = load_collision(client.player.map_name)
@@ -407,14 +411,16 @@ TOOL_SPECS: list[dict] = [
     _spec('state', 'Get current game state: character info, position, '
           'HP/SP, nearby beings, floor items.'),
     _spec('inventory', 'List inventory items.'),
-    _spec('online_list', 'Get list of all players currently online.'),
+    _spec('online', 'Get list of all players currently online.',
+          command='online_list'),
     _spec('say', 'Send a public chat message in-game.',
           {'message': _str('The line to speak')}, ['message']),
     _spec('whisper', 'Send a private message to a player.',
           {'target': _str('Player name'), 'message': _str('The line to speak')},
           ['target', 'message']),
-    _spec('party_message', 'Send a message to party members.',
-          {'message': _str('The line to speak')}, ['message']),
+    _spec('party_chat', 'Send a message to party members.',
+          {'message': _str('The line to speak')}, ['message'],
+          command='party_message'),
     _spec('party_leave', 'Leave the current party.'),
     _spec('walk', 'Walk to coordinates (x, y) using pathfinding.',
           {'x': _int('X coordinate'), 'y': _int('Y coordinate')},
@@ -425,17 +431,19 @@ TOOL_SPECS: list[dict] = [
     _spec('stand', 'Stand up.'),
     _spec('attack', 'Attack a being by ID (starts continuous attack).',
           {'target_id': _int('Being ID')}, ['target_id']),
-    _spec('stopattack', 'Stop auto-attack and hunting.'),
+    _spec('stop_attack', 'Stop auto-attack and hunting.',
+          command='stopattack'),
     _spec('hunt', 'Continuously hunt monster(s) by name. Pass empty string '
-          'to stop.', {'monster_name': _str('Monster name')}),
+          'to stop.', {'monster_name': _str('Monster name')},
+          ['monster_name']),
     _spec('respawn', 'Respawn after death.'),
     _spec('party_reply', 'Accept or reject a party invitation.',
           {'account_id': _int('Account ID'), 'accept': _bool('Accept?')},
           ['account_id']),
     _spec('attack_range', 'Override weapon attack range (1=melee).',
-          {'range': _int('Attack range')}, ['range']),
+          {'range': _int('Attack range')}),
     _spec('ferry_exit', 'Auto-exit the ferry after N bell rings.',
-          {'bells': _int('Bell count')}, ['bells']),
+          {'bells': _int('Bell count')}),
     _spec('pickup', 'Pick up a floor item by ID.',
           {'item_id': _int('Item ID')}, ['item_id']),
     _spec('shop_buy', "Open a shop NPC's buy list.",
@@ -444,10 +452,10 @@ TOOL_SPECS: list[dict] = [
           {'npc_id': _int('NPC ID')}, ['npc_id']),
     _spec('buy', 'Buy items from shop. Must open buy list first.',
           {'name_id': _int('Item name ID'), 'count': _int('Amount')},
-          ['name_id', 'count']),
+          ['name_id']),
     _spec('sell', 'Sell items to shop. Must open sell list first.',
           {'index': _int('Inventory index'), 'count': _int('Amount')},
-          ['index', 'count']),
+          ['index']),
     _spec('equip', 'Equip or unequip an item by inventory index.',
           {'index': _int('Inventory index')}, ['index']),
     _spec('use', 'Use an item by inventory index.',
@@ -457,12 +465,12 @@ TOOL_SPECS: list[dict] = [
           ['index']),
     _spec('npc', 'Click on an NPC to start dialog.',
           {'npc_id': _int('NPC ID')}, ['npc_id']),
-    _spec('next', 'Continue NPC dialog (click Next).', command='next'),
-    _spec('close', 'Close NPC dialog.',
+    _spec('npc_next', 'Continue NPC dialog (click Next).', command='next'),
+    _spec('npc_close', 'Close NPC dialog.',
           {'npc_id': _int('NPC ID, 0 = current')}, command='close'),
     _spec('close_storage', 'Close the storage dialog.'),
-    _spec('choose', 'Choose an NPC menu option (1-based index).',
-          {'choice': _int('Option index')}, ['choice']),
+    _spec('npc_choose', 'Choose an NPC menu option (1-based index).',
+          {'choice': _int('Option index')}, ['choice'], command='choose'),
     _spec('npc_input_str', 'Submit text input to an NPC dialog.',
           {'text': _str('Text')}, ['text']),
     _spec('npc_input_int', 'Submit integer input to an NPC dialog.',
@@ -480,7 +488,7 @@ TOOL_SPECS: list[dict] = [
     _spec('trade_commit', 'Commit the trade after both sides have locked.'),
     _spec('trade_cancel', 'Cancel the current trade.'),
     _spec('follow', 'Follow a player by name or ID. Empty string stops.',
-          {'target': _str('Player name or ID')}),
+          {'target': _str('Player name or ID')}, ['target']),
     _spec('emote', 'Show an emote sprite above the character.',
           {'emote_id': _int('Emote ID from client-data emotes.xml')},
           ['emote_id']),
