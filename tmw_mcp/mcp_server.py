@@ -389,9 +389,7 @@ def _execute_tool_command(client: GameClient, cmd: str, kw: dict) -> str:
         return f'Using item at index {kw["index"]}'
 
     elif cmd == 'emote':
-        import struct
-        pkt = struct.pack('<HB', 0x00bf, kw['emote_id'])
-        client.map_conn.send_packet(pkt)
+        client.emote(kw['emote_id'])
         return f'Emote {kw["emote_id"]}'
 
     elif cmd == 'stat':

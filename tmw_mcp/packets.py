@@ -209,6 +209,14 @@ def build_player_action(target_id: int, action: int) -> bytes:
     return struct.pack('<HIB', 0x0089, target_id, action)
 
 
+def build_emote(emote_id: int) -> bytes:
+    """0x00bf: Show an emote sprite above the character.
+
+    Emote ids come from the client-data emotes.xml.
+    """
+    return struct.pack('<HB', 0x00bf, emote_id)
+
+
 def build_chat(message: str) -> bytes:
     """0x008c: Send a chat message to nearby players."""
     msg_bytes = message.encode('utf-8') + b'\x00'

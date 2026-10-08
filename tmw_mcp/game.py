@@ -29,6 +29,7 @@ from .packets import (
     build_walk,
     build_close_storage,
     build_player_action,
+    build_emote,
     build_chat,
     build_npc_click,
     build_name_request,
@@ -1185,6 +1186,13 @@ class GameClient:
     def stand(self):
         """Stand up."""
         self.map_conn.send_packet(build_player_action(0, 3))
+
+    def emote(self, emote_id: int):
+        """Show an emote sprite above the character.
+
+        Emote ids come from the client-data emotes.xml.
+        """
+        self.map_conn.send_packet(build_emote(emote_id))
 
     def pickup(self, item_id: int):
         """Pick up an item."""
