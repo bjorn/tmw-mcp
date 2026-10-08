@@ -39,7 +39,8 @@ from mcp.types import JSONRPCNotification, JSONRPCMessage
 from mcp.shared.message import SessionMessage
 
 from .game import GameClient
-from .commands import execute_tool_command
+from .commands import (
+    execute_tool_command, format_game_state, format_inventory)
 from .bot import (
     write_log, write_chat_log, write_npc_log, write_state,
     format_event, is_wakeup_event, run_auto_behaviors,
@@ -372,54 +373,6 @@ def game_loop():
 # State formatting (for the `state` tool)
 # ---------------------------------------------------------------------------
 
-def format_game_state(client: GameClient) -> str:
-    """Format full game state as a string."""
-    p = client.player
-    lines = [
-        f'character: {p.char_name}',
-        f'map: {p.map_name}',
-        f'position: {p.x},{p.y}',
-        f'hp: {p.hp}/{p.max_hp}',
-        f'sp: {p.sp}/{p.max_sp}',
-        f'level: {p.base_level}/{p.job_level}',
-        f'exp: {p.base_exp}/{p.next_base_exp}',
-        f'job_exp: {p.job_exp}/{p.next_job_exp}',
-        f'zeny: {p.zeny}',
-        f'stats: STR:{p.str_} AGI:{p.agi} VIT:{p.vit} INT:{p.int_} DEX:{p.dex} LUK:{p.luk}',
-        f'status_point: {p.status_point}',
-        f'weight: {p.weight}/{p.max_weight}',
-        '',
-        'nearby_beings:',
-    ]
-    for b in client.nearby_beings(radius=30):
-        name = being_display_name(b)
-        hp_str = f' HP:{b.hp}/{b.max_hp}' if b.max_hp > 0 else ''
-        lv_str = f' lv{b.level}' if b.level > 0 else ''
-        lines.append(f'  [{b.block_id}] {name} at ({b.x},{b.y}){lv_str}{hp_str}')
-    lines.append('')
-    lines.append('floor_items:')
-    for item in client.nearby_items(radius=15):
-        lines.append(f'  [{item.block_id}] {item_name(item.name_id)} x{item.amount} at ({item.x},{item.y})')
-    lines.append('')
-    lines.append('npc_dialog:')
-    if client.npc_dialog_open and not client.npc_dialog and not client.npc_waiting_next and not client.npc_waiting_close and not client.npc_waiting_choice:
-        lines.append('  [WARNING: NPC dialog lock active but no dialog received — send close to unlock]')
-    if client.npc_dialog:
-        for msg in client.npc_dialog:
-            lines.append(f'  {msg}')
-    if client.npc_waiting_next:
-        lines.append('  [waiting: next]')
-    if client.npc_waiting_close:
-        lines.append('  [waiting: close]')
-    if client.npc_waiting_choice:
-        for i, c in enumerate(client.npc_choices, 1):
-            lines.append(f'  [{i}] {c}')
-        lines.append('  [waiting: choose N]')
-    if client.npc_waiting_input == 'str':
-        lines.append('  [waiting: text input]')
-    elif client.npc_waiting_input == 'int':
-        lines.append('  [waiting: number input]')
-    return '\n'.join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -601,12 +554,7 @@ def tmw_inventory(ctx: Context) -> str:
     client = state.client
     if not client:
         return 'Game not connected'
-    lines = []
-    for idx in sorted(client.inventory.keys()):
-        item = client.inventory[idx]
-        equipped = ' [EQUIPPED]' if item.equipped else ''
-        lines.append(f'  [{idx}] {item_name(item.name_id)} x{item.amount}{equipped}')
-    return '\n'.join(lines) if lines else '(empty)'
+    return format_inventory(client)
 
 
 @mcp.tool(name="online")
